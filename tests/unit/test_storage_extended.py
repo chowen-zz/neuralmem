@@ -213,3 +213,20 @@ def test_get_stats_by_user(storage_with_data):
     assert stats["total"] == 5
     stats_other = storage_with_data.get_stats(user_id="nobody")
     assert stats_other["total"] == 0
+
+
+def test_list_memories_returns_all(storage_with_data):
+    memories = storage_with_data.list_memories()
+    assert len(memories) == 5
+    assert all(hasattr(m, "content") for m in memories)
+
+
+def test_list_memories_by_user(storage_with_data):
+    memories = storage_with_data.list_memories(user_id="user-1")
+    assert len(memories) == 5
+    assert all(m.user_id == "user-1" for m in memories)
+
+
+def test_list_memories_empty(storage):
+    memories = storage.list_memories()
+    assert memories == []

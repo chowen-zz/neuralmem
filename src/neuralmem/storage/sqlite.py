@@ -568,6 +568,25 @@ class SQLiteStorage(StorageBackend):
             "entity_count": len(all_entity_ids),
         }
 
+    def list_memories(
+        self, user_id: str | None = None, limit: int = 10_000
+    ) -> list[Memory]:
+        """Fetch all memories, optionally filtered by user_id."""
+        try:
+            if user_id is not None:
+                cursor = self._execute(
+                    "SELECT * FROM memories WHERE user_id = ? LIMIT ?",
+                    (user_id, limit),
+                )
+            else:
+                cursor = self._execute(
+                    "SELECT * FROM memories LIMIT ?", (limit,)
+                )
+            rows = cursor.fetchall()
+            return [_memory_from_row(row) for row in rows]
+        except Exception as e:
+            raise StorageError(f"list_memories failed: {e}") from e
+
     def load_graph_snapshot(self) -> dict | None:
         """加载图谱快照（JSON 格式）"""
         try:

@@ -65,6 +65,11 @@ class StorageBackend(ABC):
     def get_stats(self, user_id: str | None = None) -> dict[str, object]: ...
 
     @abstractmethod
+    def list_memories(
+        self, user_id: str | None = None, limit: int = 10_000
+    ) -> list[Memory]: ...
+
+    @abstractmethod
     def load_graph_snapshot(self) -> dict | None: ...
 
     @abstractmethod
