@@ -15,6 +15,8 @@ def mem(tmp_path, mock_embedder):
     nm.retrieval._embedder = mock_embedder
     nm.retrieval._semantic._embedder = mock_embedder
     nm.retrieval._temporal._embedder = mock_embedder
+    from neuralmem.extraction.entity_resolver import EntityResolver
+    nm.resolver = EntityResolver(mock_embedder)
     return nm
 
 
@@ -123,3 +125,13 @@ def test_remember_dedup(mem):
     # 第二次如果 embedding 相同会触发去重，返回 0 条
     # 但由于 mock embedder 是确定性的，应触发去重
     assert isinstance(second, list)
+
+
+def test_entity_resolver_prevents_duplicate_entities(mem):
+    """相同实体名称的两次 remember 不应创建两个图谱节点"""
+    mem.remember("Alice is a software engineer", user_id="u1")
+    mem.remember("Alice prefers Python", user_id="u1")
+    entities = mem.graph.get_entities()
+    alice_nodes = [e for e in entities if "alice" in e.name.lower()]
+    # 完全匹配 → 消歧后只有一个 Alice 节点
+    assert len(alice_nodes) == 1

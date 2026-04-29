@@ -15,6 +15,7 @@ from neuralmem.graph.knowledge_graph import KnowledgeGraph
 from neuralmem.retrieval.engine import RetrievalEngine
 from neuralmem.lifecycle.decay import DecayManager
 from neuralmem.lifecycle.consolidation import MemoryConsolidator
+from neuralmem.extraction.entity_resolver import EntityResolver
 
 _logger = logging.getLogger(__name__)
 
@@ -61,6 +62,7 @@ class NeuralMem:
         )
         self.decay = DecayManager(self.storage)
         self.consolidator = MemoryConsolidator()
+        self.resolver = EntityResolver(self.embedding)
 
     # ==================== 核心 API ====================
 
@@ -98,6 +100,12 @@ class NeuralMem:
                     _logger.debug("Skipping duplicate memory: %s", item.content[:50])
                     continue
 
+                # 实体消歧（在构建 Memory 之前）
+                resolved_entities = self.resolver.resolve(
+                    item.entities,
+                    self.graph.get_entities(user_id=user_id),
+                )
+
                 memory = Memory(
                     content=item.content,
                     memory_type=item.memory_type or memory_type or MemoryType.SEMANTIC,
@@ -107,14 +115,13 @@ class NeuralMem:
                     session_id=session_id,
                     tags=tuple(tags or item.tags),
                     importance=importance or item.importance,
-                    entity_ids=tuple(item.entity_ids),
+                    entity_ids=tuple(e.id for e in resolved_entities),
                     embedding=vector,
                 )
 
                 self.storage.save_memory(memory)
 
-                # 更新图谱
-                for entity in item.entities:
+                for entity in resolved_entities:
                     self.graph.upsert_entity(entity)
                     self.graph.link_memory_to_entity(memory.id, entity.id)
                 for relation in item.relations:
