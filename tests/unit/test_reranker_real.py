@@ -68,3 +68,44 @@ def test_reranker_passes_correct_pairs_to_model():
 def test_reranker_model_not_loaded_on_init():
     reranker = CrossEncoderReranker()
     assert reranker._model is None
+
+
+def test_get_model_import_error_sets_false_and_returns_none():
+    """ImportError 分支：sentence-transformers 未安装时降级为 None"""
+    reranker = CrossEncoderReranker()
+    assert reranker._model is None
+
+    with patch.dict("sys.modules", {"sentence_transformers": None}):
+        result = reranker._get_model()
+
+    assert result is None
+    assert reranker._model is False
+
+
+def test_get_model_success_loads_cross_encoder():
+    """成功加载分支：sentence-transformers 可用时返回 CrossEncoder 实例"""
+    reranker = CrossEncoderReranker()
+    assert reranker._model is None
+
+    mock_cross_encoder_instance = MagicMock()
+    mock_cross_encoder_cls = MagicMock(return_value=mock_cross_encoder_instance)
+    mock_st_module = MagicMock()
+    mock_st_module.CrossEncoder = mock_cross_encoder_cls
+
+    with patch.dict("sys.modules", {"sentence_transformers": mock_st_module}):
+        result = reranker._get_model()
+
+    assert result is mock_cross_encoder_instance
+    assert reranker._model is mock_cross_encoder_instance
+    mock_cross_encoder_cls.assert_called_once_with("cross-encoder/ms-marco-MiniLM-L-6-v2")
+
+
+def test_get_model_cached_after_first_call():
+    """缓存分支：第二次调用不重复初始化"""
+    reranker = CrossEncoderReranker()
+    mock_model = MagicMock()
+    reranker._model = mock_model
+
+    result = reranker._get_model()
+
+    assert result is mock_model
