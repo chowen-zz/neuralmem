@@ -61,10 +61,17 @@ def test_graph_strategy_returns_ranked_items():
 
 
 def test_reranker_stub_preserves_order():
+    from neuralmem.core.types import Memory
     reranker = CrossEncoderReranker()
-    candidates = [("a", 0.9), ("b", 0.7), ("c", 0.5)]
+    reranker._model = False  # 强制降级模式
+    m1 = Memory(content="first")
+    m2 = Memory(content="second")
+    m3 = Memory(content="third")
+    candidates = [(m1, 0.9), (m2, 0.7), (m3, 0.5)]
     result = reranker.rerank("test", candidates)
-    assert result == candidates
+    assert result[0][0] == m1.id
+    assert result[1][0] == m2.id
+    assert result[2][0] == m3.id
 
 
 def test_semantic_strategy_handles_exception(mock_embedder):

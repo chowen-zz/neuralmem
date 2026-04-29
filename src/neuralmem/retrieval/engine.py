@@ -104,9 +104,14 @@ class RetrievalEngine:
         # 取 Top-K 候选（先取 limit * 2 做可选重排序）
         top_candidates = merged[: query.limit * 2]
 
-        # 可选：Cross-Encoder 重排序（stub: 保持原顺序）
+        # 可选：Cross-Encoder 重排序
         if self._config.enable_reranker and top_candidates:
-            top_candidates = self._reranker.rerank(query.query, top_candidates)
+            loaded_for_rerank = [
+                (self._storage.get_memory(mid), s)
+                for mid, s in top_candidates
+            ]
+            loaded_for_rerank = [(m, s) for m, s in loaded_for_rerank if m is not None]
+            top_candidates = self._reranker.rerank(query.query, loaded_for_rerank)
 
         # 加载完整 Memory 对象并构建结果
         results: list[SearchResult] = []
