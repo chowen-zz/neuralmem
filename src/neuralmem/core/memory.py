@@ -59,7 +59,7 @@ class NeuralMem:
             graph=self.graph,
             config=self.config,
         )
-        self.decay = DecayManager()
+        self.decay = DecayManager(self.storage)
         self.consolidator = MemoryConsolidator()
 
     # ==================== 核心 API ====================

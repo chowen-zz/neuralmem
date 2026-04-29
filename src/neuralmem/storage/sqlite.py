@@ -269,6 +269,7 @@ class SQLiteStorage(StorageBackend):
         user_id: str | None = None,
         before: object = None,
         tags: list[str] | None = None,
+        max_importance: float | None = None,
     ) -> int:
         conditions: list[str] = []
         params: list[Any] = []
@@ -292,6 +293,9 @@ class SQLiteStorage(StorageBackend):
             conditions.append(f"({tag_conditions})")
             for tag in tags:
                 params.append(f'%"{tag}"%')
+        if max_importance is not None:
+            conditions.append("importance < ?")
+            params.append(max_importance)
 
         where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
 

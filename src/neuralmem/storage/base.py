@@ -23,6 +23,7 @@ class StorageBackend(ABC):
         user_id: str | None = None,
         before: object = None,
         tags: list[str] | None = None,
+        max_importance: float | None = None,
     ) -> int: ...
 
     @abstractmethod
