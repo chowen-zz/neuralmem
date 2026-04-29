@@ -611,7 +611,7 @@ class SQLiteStorage(StorageBackend):
     def save_graph_snapshot(self, data: dict) -> None:
         """持久化图谱快照"""
         try:
-            now = datetime.utcnow().isoformat()
+            now = _now_iso()
             with self._lock:
                 self._execute(
                     "INSERT OR REPLACE INTO graph_snapshots (key, data, updated_at) VALUES (?, ?, ?)",
