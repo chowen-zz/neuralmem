@@ -9,6 +9,8 @@ from neuralmem.mcp.resources import get_stats_resource
 
 _logger = logging.getLogger(__name__)
 
+MAX_RECALL_LIMIT = 100  # 防止无限扫描 DoS
+
 mcp = FastMCP(
     "NeuralMem",
     instructions="Persistent memory for AI agents. Remember, recall, reflect.",
@@ -70,6 +72,7 @@ async def recall(
         limit: Maximum number of results (default: 5)
         memory_type: Filter by type (empty = all types)
     """
+    limit = max(1, min(limit, MAX_RECALL_LIMIT))
     types = [parse_memory_type(memory_type)] if memory_type else None
     mt_list = [t for t in (types or []) if t is not None]
     results = await asyncio.to_thread(
