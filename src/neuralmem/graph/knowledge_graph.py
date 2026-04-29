@@ -60,12 +60,24 @@ class KnowledgeGraph:
             return node_attrs_to_entity(entity_id, dict(self._graph.nodes[entity_id]))
 
     def get_entities(self, user_id: str | None = None) -> list[Entity]:
-        """返回所有实体（user_id 过滤 Week 9 实现）"""
+        """获取实体列表，可按 user_id 过滤。
+
+        过滤语义：仅排除 attributes["user_id"] 明确属于其他用户的实体；
+        没有 user_id 属性的实体（共享/未标注）始终包含。
+        过滤依赖实体 attributes 中的 user_id 字段，需在 upsert_entity 时通过
+        attributes 传入才能生效隔离。
+        """
         with self._lock:
-            return [
+            entities = [
                 node_attrs_to_entity(nid, dict(attrs))
                 for nid, attrs in self._graph.nodes(data=True)
             ]
+        if user_id is None:
+            return entities
+        return [
+            e for e in entities
+            if e.attributes.get("user_id") in (None, user_id)
+        ]
 
     def find_entities(self, query: str) -> list[Entity]:
         """按名字模糊匹配（不区分大小写）"""
@@ -192,11 +204,15 @@ class KnowledgeGraph:
             _logger.debug("No graph snapshot loaded (%s)", exc)
 
     def _save_snapshot_async(self) -> None:
-        """在后台线程序列化图谱并持久化"""
+        """后台持久化图谱快照（在调用线程持锁序列化，后台线程仅负责 I/O，消除锁竞争）"""
+        try:
+            with self._lock:
+                data = nx.node_link_data(self._graph)
+        except Exception:  # noqa: BLE001
+            return
+
         def _worker() -> None:
             try:
-                with self._lock:
-                    data = nx.node_link_data(self._graph)
                 self._storage.save_graph_snapshot(data)
                 _logger.debug("Graph snapshot saved: %d nodes", len(data.get("nodes", [])))
             except Exception as exc:  # noqa: BLE001
