@@ -1,6 +1,6 @@
 """NeuralMem 核心数据模型 — frozen=True 确保跨模块类型契约稳定"""
 from __future__ import annotations
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any
 from uuid import uuid4
@@ -32,8 +32,8 @@ class Entity(BaseModel):
     entity_type: str = "unknown"
     aliases: tuple[str, ...] = Field(default_factory=tuple)
     attributes: dict[str, Any] = Field(default_factory=dict)
-    first_seen: datetime = Field(default_factory=datetime.utcnow)
-    last_seen: datetime = Field(default_factory=datetime.utcnow)
+    first_seen: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    last_seen: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class Relation(BaseModel):
@@ -44,7 +44,7 @@ class Relation(BaseModel):
     target_id: str
     relation_type: str
     weight: float = Field(default=1.0, ge=0.0)
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -71,9 +71,9 @@ class Memory(BaseModel):
     entity_ids: tuple[str, ...] = Field(default_factory=tuple)
 
     # 时间戳
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
-    last_accessed: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    last_accessed: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     access_count: int = Field(default=0, ge=0)
 
     # 向量（内部使用，不序列化到 API）
