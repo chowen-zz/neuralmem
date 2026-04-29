@@ -51,11 +51,11 @@ class CrossEncoderReranker:
         if not candidates:
             return []
 
-        model = self._get_model()
-        if model is None:
+        if len(candidates) <= 1:
             return [(m.id, score) for m, score in candidates]
 
-        if len(candidates) <= 1:
+        model = self._get_model()
+        if model is None:
             return [(m.id, score) for m, score in candidates]
 
         pairs = [(query, m.content) for m, _ in candidates]

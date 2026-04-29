@@ -2,6 +2,7 @@
 from __future__ import annotations
 import concurrent.futures
 import logging
+import math as _math
 from neuralmem.core.config import NeuralMemConfig
 from neuralmem.core.protocols import StorageProtocol, EmbedderProtocol, GraphStoreProtocol
 from neuralmem.core.types import SearchQuery, SearchResult
@@ -13,6 +14,10 @@ from neuralmem.retrieval.graph import GraphStrategy
 from neuralmem.retrieval.temporal import TemporalStrategy
 
 _logger = logging.getLogger(__name__)
+
+
+def _sigmoid(x: float) -> float:
+    return 1.0 / (1.0 + _math.exp(-x))
 
 
 class RetrievalEngine:
@@ -105,24 +110,32 @@ class RetrievalEngine:
         top_candidates = merged[: query.limit * 2]
 
         # 可选：Cross-Encoder 重排序
-        if self._config.enable_reranker and top_candidates:
-            loaded_for_rerank = [
-                (self._storage.get_memory(mid), s)
-                for mid, s in top_candidates
-            ]
-            loaded_for_rerank = [(m, s) for m, s in loaded_for_rerank if m is not None]
+        memory_cache: dict[str, object] = {}
+        use_reranker = self._config.enable_reranker and top_candidates
+        if use_reranker:
+            loaded_for_rerank = []
+            for mid, s in top_candidates:
+                m = self._storage.get_memory(mid)
+                if m is not None:
+                    memory_cache[mid] = m
+                    loaded_for_rerank.append((m, s))
             top_candidates = self._reranker.rerank(query.query, loaded_for_rerank)
 
         # 加载完整 Memory 对象并构建结果
         results: list[SearchResult] = []
         for memory_id, score in top_candidates[: query.limit]:
-            if score < query.min_score:
+            if use_reranker:
+                final_score = float(_sigmoid(score))
+            else:
+                final_score = float(score)
+            final_score = max(0.0, min(1.0, final_score))
+            if final_score < query.min_score:
                 continue
-            memory = self._storage.get_memory(memory_id)
+            memory = memory_cache.get(memory_id) or self._storage.get_memory(memory_id)
             if memory is None:
                 continue
             method = self._get_primary_method(memory_id, strategy_results)
-            results.append(SearchResult(memory=memory, score=score, retrieval_method=method))
+            results.append(SearchResult(memory=memory, score=final_score, retrieval_method=method))
 
         return results
 
