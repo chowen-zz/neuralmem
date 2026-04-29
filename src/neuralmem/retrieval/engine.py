@@ -1,0 +1,134 @@
+"""四策略并行检索引擎 — NeuralMem 核心差异化"""
+from __future__ import annotations
+import concurrent.futures
+import logging
+from neuralmem.core.config import NeuralMemConfig
+from neuralmem.core.protocols import StorageProtocol, EmbedderProtocol, GraphStoreProtocol
+from neuralmem.core.types import SearchQuery, SearchResult
+from neuralmem.retrieval.fusion import RRFMerger, RankedItem
+from neuralmem.retrieval.reranker import CrossEncoderReranker
+from neuralmem.retrieval.semantic import SemanticStrategy
+from neuralmem.retrieval.keyword import KeywordStrategy
+from neuralmem.retrieval.graph import GraphStrategy
+from neuralmem.retrieval.temporal import TemporalStrategy
+
+_logger = logging.getLogger(__name__)
+
+
+class RetrievalEngine:
+    """
+    四策略并行检索 + RRF 融合 + 可选 Cross-Encoder 重排序。
+    策略:
+    1. Semantic  — 向量语义搜索
+    2. Keyword   — BM25 关键词匹配
+    3. Graph     — 图谱遍历
+    4. Temporal  — 时序加权
+    """
+
+    def __init__(
+        self,
+        storage: StorageProtocol,
+        embedder: EmbedderProtocol,
+        graph: GraphStoreProtocol,
+        config: NeuralMemConfig,
+    ):
+        self._storage = storage
+        self._embedder = embedder
+        self._graph = graph
+        self._config = config
+        self._merger = RRFMerger(k=60)
+        self._reranker = CrossEncoderReranker()
+        self._semantic = SemanticStrategy(storage, embedder)
+        self._keyword = KeywordStrategy(storage)
+        self._graph_strategy = GraphStrategy(graph)
+        self._temporal = TemporalStrategy(storage, embedder)
+
+    def search(self, query: SearchQuery) -> list[SearchResult]:
+        """执行四策略并行检索，返回按相关性排序的结果列表"""
+        limit_per_strategy = query.limit * 3
+
+        # 并行执行四个策略（使用线程池，因为核心 API 全同步）
+        strategy_results: dict[str, list[RankedItem]] = {}
+
+        def run_semantic() -> list[RankedItem]:
+            return self._semantic.retrieve(
+                query.query,
+                user_id=query.user_id,
+                memory_types=list(query.memory_types) if query.memory_types else None,
+                limit=limit_per_strategy,
+            )
+
+        def run_keyword() -> list[RankedItem]:
+            return self._keyword.retrieve(
+                query.query,
+                user_id=query.user_id,
+                memory_types=list(query.memory_types) if query.memory_types else None,
+                limit=limit_per_strategy,
+            )
+
+        def run_graph() -> list[RankedItem]:
+            return self._graph_strategy.retrieve(
+                query.query, user_id=query.user_id, limit=limit_per_strategy
+            )
+
+        def run_temporal() -> list[RankedItem]:
+            return self._temporal.retrieve(
+                query.query,
+                user_id=query.user_id,
+                time_range=query.time_range,
+                recency_weight=self._config.recency_weight,
+                limit=limit_per_strategy,
+            )
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+            futures = {
+                "semantic": executor.submit(run_semantic),
+                "keyword": executor.submit(run_keyword),
+                "graph": executor.submit(run_graph),
+                "temporal": executor.submit(run_temporal),
+            }
+            for name, future in futures.items():
+                try:
+                    results = future.result(timeout=10.0)
+                    if results:
+                        strategy_results[name] = results
+                except Exception as e:
+                    _logger.warning("Strategy %s failed: %s", name, e)
+
+        if not strategy_results:
+            return []
+
+        # RRF 融合
+        merged = self._merger.merge(strategy_results)
+
+        # 取 Top-K 候选（先取 limit * 2 做可选重排序）
+        top_candidates = merged[: query.limit * 2]
+
+        # 可选：Cross-Encoder 重排序（stub: 保持原顺序）
+        if self._config.enable_reranker and top_candidates:
+            top_candidates = self._reranker.rerank(query.query, top_candidates)
+
+        # 加载完整 Memory 对象并构建结果
+        results: list[SearchResult] = []
+        for memory_id, score in top_candidates[: query.limit]:
+            if score < query.min_score:
+                continue
+            memory = self._storage.get_memory(memory_id)
+            if memory is None:
+                continue
+            method = self._get_primary_method(memory_id, strategy_results)
+            results.append(SearchResult(memory=memory, score=score, retrieval_method=method))
+
+        return results
+
+    def _get_primary_method(
+        self, memory_id: str, strategy_results: dict[str, list[RankedItem]]
+    ) -> str:
+        best_score = -1.0
+        best_method = "rrf"
+        for method, items in strategy_results.items():
+            for item in items:
+                if item.id == memory_id and item.score > best_score:
+                    best_score = item.score
+                    best_method = method
+        return best_method
