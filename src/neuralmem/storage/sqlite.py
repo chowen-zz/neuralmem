@@ -571,19 +571,21 @@ class SQLiteStorage(StorageBackend):
     def list_memories(
         self, user_id: str | None = None, limit: int = 10_000
     ) -> list[Memory]:
-        """Fetch all memories, optionally filtered by user_id."""
+        """获取所有记忆，可按 user_id 过滤。"""
         try:
-            if user_id is not None:
-                cursor = self._execute(
-                    "SELECT * FROM memories WHERE user_id = ? LIMIT ?",
-                    (user_id, limit),
-                )
-            else:
-                cursor = self._execute(
-                    "SELECT * FROM memories LIMIT ?", (limit,)
-                )
-            rows = cursor.fetchall()
-            return [_memory_from_row(row) for row in rows]
+            with self._lock:
+                if user_id is not None:
+                    cursor = self._execute(
+                        "SELECT * FROM memories WHERE user_id = ? LIMIT ?",
+                        (user_id, limit),
+                    )
+                else:
+                    cursor = self._execute(
+                        "SELECT * FROM memories LIMIT ?", (limit,)
+                    )
+                return [_memory_from_row(row) for row in cursor.fetchall()]
+        except StorageError:
+            raise
         except Exception as e:
             raise StorageError(f"list_memories failed: {e}") from e
 
