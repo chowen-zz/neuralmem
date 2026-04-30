@@ -1,5 +1,7 @@
 # NeuralMem
 
+**简体中文** | [English](README_en.md) | [日本語](README_ja.md) | [한국어](README_ko.md) | [Tiếng Việt](README_vi.md) | [繁體中文](README_zh-TW.md)
+
 > **Memory as Infrastructure** — Local-first, MCP-native, Enterprise-ready
 
 Agent 记忆领域的 SQLite —— 零依赖安装，本地优先，企业可扩展。
