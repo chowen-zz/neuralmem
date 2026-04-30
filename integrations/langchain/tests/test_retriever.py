@@ -63,3 +63,28 @@ def test_neuralmem_error_propagates(mock_mem):
     retriever = NeuralMemRetriever(mem=mock_mem)
     with pytest.raises(NeuralMemError, match="recall failed"):
         retriever.invoke("query")
+
+
+def test_document_metadata_user_id_can_be_none(mock_mem, sample_result):
+    """Memory.user_id is Optional[str] — metadata stores None if not set."""
+    from neuralmem.core.types import Memory, MemoryType, MemoryScope
+    memory_no_user = Memory(
+        id="abc123def456",
+        content="User prefers Python for backend development",
+        memory_type=MemoryType.SEMANTIC,
+        scope=MemoryScope.SESSION,
+        user_id=None,
+        tags=("preference",),
+        importance=0.8,
+        created_at=sample_result.memory.created_at,
+    )
+    from neuralmem.core.types import SearchResult
+    result_no_user = SearchResult(
+        memory=memory_no_user,
+        score=0.85,
+        retrieval_method="semantic",
+    )
+    mock_mem.recall.return_value = [result_no_user]
+    retriever = NeuralMemRetriever(mem=mock_mem)
+    docs = retriever.invoke("query")
+    assert docs[0].metadata["user_id"] is None

@@ -42,3 +42,12 @@ async def test_async_user_id_forwarded(mock_mem):
     retriever = NeuralMemRetriever(mem=mock_mem, user_id="bob")
     await retriever.ainvoke("query")
     assert mock_mem.recall.call_args.kwargs["user_id"] == "bob"
+
+
+@pytest.mark.asyncio
+async def test_async_neuralmem_error_propagates(mock_mem):
+    from neuralmem.core.exceptions import NeuralMemError
+    mock_mem.recall.side_effect = NeuralMemError("async recall failed")
+    retriever = NeuralMemRetriever(mem=mock_mem)
+    with pytest.raises(NeuralMemError, match="async recall failed"):
+        await retriever.ainvoke("query")
