@@ -4,7 +4,7 @@
 
 | 层级 | 价格 | 特性 |
 |------|------|------|
-| Community | 免费 | 完整功能，AGPL-3.0 |
+| Community | 免费 | 完整功能，Apache-2.0 |
 | Team | $29/月 | 多用户 + REST API + 云同步 |
 | Business | $149/月 | SSO + RBAC + 审计日志 |
 | Enterprise | 联系销售 | VPC 部署 + SLA + HIPAA |

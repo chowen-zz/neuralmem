@@ -13,7 +13,7 @@ def cmd_mcp(args: argparse.Namespace) -> None:
     from neuralmem.mcp.server import mcp
     transport = "streamable-http" if getattr(args, "http", False) else "stdio"
     print(
-        "NeuralMem v0.1.0 | AGPL-3.0 | Commercial license: neuralmem.dev/pricing",
+        "NeuralMem v0.1.0 | Apache-2.0",
         file=sys.stderr,
     )
     mcp.run(transport=transport)

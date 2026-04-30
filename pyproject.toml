@@ -3,7 +3,7 @@ name = "neuralmem"
 version = "0.1.0"
 description = "Memory as Infrastructure — Local-first, MCP-native agent memory"
 readme = "README.md"
-license = "AGPL-3.0-or-later"
+license = "Apache-2.0"
 requires-python = ">=3.10"
 authors = [{ name = "NeuralMem Team" }]
 keywords = ["agent", "memory", "mcp", "llm", "ai"]
@@ -11,7 +11,7 @@ classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
-    "License :: OSI Approved :: GNU Affero General Public License v3",
+    "License :: OSI Approved :: Apache Software License",
     "Programming Language :: Python :: 3",
 ]
 
