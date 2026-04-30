@@ -1,8 +1,10 @@
 """NeuralMem 配置管理"""
 from __future__ import annotations
+
 import os
 from pathlib import Path
-from pydantic import BaseModel, Field, field_validator
+
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class NeuralMemConfig(BaseModel):
@@ -51,13 +53,47 @@ class NeuralMemConfig(BaseModel):
     openai_api_key: str | None = Field(default=None)
     openai_embedding_model: str = Field(default="text-embedding-3-small")
 
+    # Cohere
+    cohere_api_key: str | None = Field(default=None)
+    cohere_embedding_model: str = Field(default="embed-multilingual-v3.0")
+
+    # Gemini
+    gemini_api_key: str | None = Field(default=None)
+    gemini_embedding_model: str = Field(default="text-embedding-004")
+
+    # HuggingFace Inference API
+    hf_api_key: str | None = Field(default=None)
+    hf_model: str = Field(default="BAAI/bge-m3")
+    hf_inference_url: str = Field(default="https://api-inference.huggingface.co")
+
+    # Azure OpenAI
+    azure_endpoint: str | None = Field(default=None)
+    azure_api_key: str | None = Field(default=None)
+    azure_deployment: str = Field(default="text-embedding-3-small")
+    azure_api_version: str = Field(default="2024-02-01")
+
+    # LLM extractor selection (replaces enable_llm_extraction bool)
+    llm_extractor: str = Field(
+        default="none",
+        description="LLM 提取器：none | ollama | openai | anthropic",
+    )
+    openai_extractor_model: str = Field(default="gpt-4o-mini")
+    anthropic_api_key: str | None = Field(default=None)
+    anthropic_model: str = Field(default="claude-haiku-4-5-20251001")
+
+    @model_validator(mode="after")
+    def _backcompat_llm_extraction(self) -> NeuralMemConfig:
+        if self.enable_llm_extraction and self.llm_extractor == "none":
+            self.llm_extractor = "ollama"
+        return self
+
     @field_validator("db_path")
     @classmethod
     def expand_db_path(cls, v: str) -> str:
         return str(Path(v).expanduser())
 
     @classmethod
-    def from_env(cls) -> "NeuralMemConfig":
+    def from_env(cls) -> NeuralMemConfig:
         """从环境变量构建配置（NEURALMEM_ 前缀）"""
         return cls(
             db_path=os.getenv("NEURALMEM_DB_PATH", "~/.neuralmem/memory.db"),
@@ -68,6 +104,29 @@ class NeuralMemConfig(BaseModel):
             ollama_model=os.getenv("NEURALMEM_OLLAMA_MODEL", "llama3.2:3b"),
             enable_llm_extraction=os.getenv("NEURALMEM_LLM_EXTRACTION", "false").lower() == "true",
             openai_api_key=os.getenv("NEURALMEM_OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY"),
+            cohere_api_key=os.getenv("NEURALMEM_COHERE_API_KEY"),
+            cohere_embedding_model=os.getenv(
+                "NEURALMEM_COHERE_EMBEDDING_MODEL", "embed-multilingual-v3.0"
+            ),
+            gemini_api_key=os.getenv("NEURALMEM_GEMINI_API_KEY"),
+            gemini_embedding_model=os.getenv(
+                "NEURALMEM_GEMINI_EMBEDDING_MODEL", "text-embedding-004"
+            ),
+            hf_api_key=os.getenv("NEURALMEM_HF_API_KEY"),
+            hf_model=os.getenv("NEURALMEM_HF_MODEL", "BAAI/bge-m3"),
+            hf_inference_url=os.getenv(
+                "NEURALMEM_HF_INFERENCE_URL", "https://api-inference.huggingface.co"
+            ),
+            azure_endpoint=os.getenv("NEURALMEM_AZURE_ENDPOINT"),
+            azure_api_key=os.getenv("NEURALMEM_AZURE_API_KEY"),
+            azure_deployment=os.getenv("NEURALMEM_AZURE_DEPLOYMENT", "text-embedding-3-small"),
+            azure_api_version=os.getenv("NEURALMEM_AZURE_API_VERSION", "2024-02-01"),
+            llm_extractor=os.getenv("NEURALMEM_LLM_EXTRACTOR", "none"),
+            openai_extractor_model=os.getenv("NEURALMEM_OPENAI_EXTRACTOR_MODEL", "gpt-4o-mini"),
+            anthropic_api_key=os.getenv("NEURALMEM_ANTHROPIC_API_KEY"),
+            anthropic_model=os.getenv(
+                "NEURALMEM_ANTHROPIC_MODEL", "claude-haiku-4-5-20251001"
+            ),
         )
 
     def get_db_path(self) -> Path:
