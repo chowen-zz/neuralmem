@@ -1,9 +1,11 @@
 """Verify key embedding backends satisfy EmbedderProtocol at the interface level."""
 import sys
 from unittest.mock import MagicMock, patch
+
 import pytest
-from neuralmem.core.protocols import EmbedderProtocol
+
 from neuralmem.core.config import NeuralMemConfig
+from neuralmem.core.protocols import EmbedderProtocol
 
 
 def _cfg(**kwargs):
