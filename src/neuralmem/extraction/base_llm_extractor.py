@@ -11,11 +11,11 @@ from neuralmem.extraction.extractor import ExtractedItem, MemoryExtractor
 
 _logger = logging.getLogger(__name__)
 
-_EXTRACT_PROMPT = (
+_EXTRACT_PROMPT_PREFIX = (
     "Extract key facts and entities from the following text.\n"
-    'Return JSON with: {{"facts": ["fact1", "fact2"], '
-    '"entities": [{{"name": "X", "type": "person|project|technology|concept"}}]}}\n'
-    "Text: {text}\nJSON:"
+    'Return JSON with: {"facts": ["fact1", "fact2"], '
+    '"entities": [{"name": "X", "type": "person|project|technology|concept"}]}\n'
+    "Text: "
 )
 
 
@@ -31,7 +31,7 @@ class BaseLLMExtractor(ABC):
 
     def extract(self, content: str, **kwargs: object) -> list[ExtractedItem]:
         try:
-            prompt = _EXTRACT_PROMPT.format(text=content[:1000])
+            prompt = _EXTRACT_PROMPT_PREFIX + content[:1000] + "\nJSON:"
             raw = self._call_llm(prompt)
             raw = (
                 raw.strip()
