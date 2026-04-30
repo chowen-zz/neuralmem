@@ -106,3 +106,35 @@ def test_check_available_returns_cached_true(llm_extractor):
     llm_extractor._available = True
     result = llm_extractor._check_available()
     assert result is True
+
+
+def test_base_llm_extractor_fallback_on_error():
+    """BaseLLMExtractor falls back to rule extractor when _call_llm raises."""
+    from neuralmem.extraction.base_llm_extractor import BaseLLMExtractor
+    from neuralmem.core.config import NeuralMemConfig
+
+    class BrokenExtractor(BaseLLMExtractor):
+        def _call_llm(self, prompt: str) -> str:
+            raise RuntimeError("LLM unavailable")
+
+    cfg = NeuralMemConfig(db_path=":memory:")
+    extractor = BrokenExtractor(cfg)
+    items = extractor.extract("Alice works at OpenAI")
+    assert isinstance(items, list)
+    assert len(items) >= 1
+
+
+def test_base_llm_extractor_merges_entities():
+    """BaseLLMExtractor merges LLM-extracted entities with rule-extracted ones."""
+    from neuralmem.extraction.base_llm_extractor import BaseLLMExtractor
+    from neuralmem.core.config import NeuralMemConfig
+
+    class FakeExtractor(BaseLLMExtractor):
+        def _call_llm(self, prompt: str) -> str:
+            return '{"facts": [], "entities": [{"name": "DeepMind", "type": "project"}]}'
+
+    cfg = NeuralMemConfig(db_path=":memory:")
+    extractor = FakeExtractor(cfg)
+    items = extractor.extract("Alice works at DeepMind")
+    all_entity_names = [e.name for e in items[0].entities] if items else []
+    assert "DeepMind" in all_entity_names
