@@ -1,0 +1,30 @@
+[project]
+name = "neuralmem-langchain"
+version = "0.2.0"
+description = "LangChain integration for NeuralMem — BaseRetriever adapter"
+requires-python = ">=3.10"
+license = "Apache-2.0"
+authors = [{ name = "NeuralMem Team" }]
+dependencies = [
+    "neuralmem>=0.2.0",
+    "langchain-core>=0.1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "ruff>=0.4",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["neuralmem_langchain"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+addopts = "--tb=short -q"
