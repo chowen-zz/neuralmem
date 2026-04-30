@@ -25,7 +25,7 @@ class GeminiEmbedding(EmbeddingBackend):
             raise ConfigError(
                 "gemini_api_key is required for GeminiEmbedding. Set NEURALMEM_GEMINI_API_KEY."
             )
-        _genai.configure(api_key=config.gemini_api_key)
+        self._api_key = config.gemini_api_key
         self._genai = _genai
         self._model = config.gemini_embedding_model
 
@@ -37,6 +37,9 @@ class GeminiEmbedding(EmbeddingBackend):
         if not texts:
             return []
         try:
+            # Re-configure before each call to avoid global state contamination
+            # between instances with different API keys.
+            self._genai.configure(api_key=self._api_key)
             return [
                 self._genai.embed_content(model=self._model, content=text)["embedding"]
                 for text in texts

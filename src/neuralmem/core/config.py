@@ -50,25 +50,25 @@ class NeuralMemConfig(BaseModel):
     )
 
     # OpenAI（可选）
-    openai_api_key: str | None = Field(default=None)
+    openai_api_key: str | None = Field(default=None, repr=False)
     openai_embedding_model: str = Field(default="text-embedding-3-small")
 
     # Cohere
-    cohere_api_key: str | None = Field(default=None)
+    cohere_api_key: str | None = Field(default=None, repr=False)
     cohere_embedding_model: str = Field(default="embed-multilingual-v3.0")
 
     # Gemini
-    gemini_api_key: str | None = Field(default=None)
+    gemini_api_key: str | None = Field(default=None, repr=False)
     gemini_embedding_model: str = Field(default="text-embedding-004")
 
     # HuggingFace Inference API
-    hf_api_key: str | None = Field(default=None)
+    hf_api_key: str | None = Field(default=None, repr=False)
     hf_model: str = Field(default="BAAI/bge-m3")
     hf_inference_url: str = Field(default="https://api-inference.huggingface.co")
 
     # Azure OpenAI
     azure_endpoint: str | None = Field(default=None)
-    azure_api_key: str | None = Field(default=None)
+    azure_api_key: str | None = Field(default=None, repr=False)
     azure_deployment: str = Field(default="text-embedding-3-small")
     azure_api_version: str = Field(default="2024-02-01")
 
@@ -78,7 +78,7 @@ class NeuralMemConfig(BaseModel):
         description="LLM 提取器：none | ollama | openai | anthropic",
     )
     openai_extractor_model: str = Field(default="gpt-4o-mini")
-    anthropic_api_key: str | None = Field(default=None)
+    anthropic_api_key: str | None = Field(default=None, repr=False)
     anthropic_model: str = Field(default="claude-haiku-4-5-20251001")
 
     @model_validator(mode="after")

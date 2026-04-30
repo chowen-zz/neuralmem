@@ -33,7 +33,7 @@ class LLMExtractor(BaseLLMExtractor):
 
     def _call_llm(self, prompt: str) -> str:
         if not self._check_available():
-            raise RuntimeError(f"Ollama not available at {self._config.ollama_url}")
+            raise RuntimeError("Ollama not available — check NEURALMEM_OLLAMA_URL")
         import httpx
         resp = httpx.post(
             f"{self._config.ollama_url}/api/generate",

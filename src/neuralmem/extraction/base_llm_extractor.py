@@ -43,8 +43,9 @@ class BaseLLMExtractor(ABC):
             data = json.loads(raw)
             items = self._rule_extractor.extract(content, **kwargs)  # type: ignore[arg-type]
             extra_entities = [
-                Entity(name=e["name"], entity_type=e.get("type", "concept"))
+                Entity(name=str(e.get("name", ""))[:200], entity_type=e.get("type", "concept"))
                 for e in data.get("entities", [])
+                if e.get("name")
             ]
             if items and extra_entities:
                 first = items[0]
