@@ -36,3 +36,26 @@ def test_registry_openai_instantiates_openai_embedding():
         from neuralmem.embedding.openai import OpenAIEmbedding
         result = fresh_get(cfg(embedding_provider="openai", openai_api_key="sk-test"))
         assert isinstance(result, OpenAIEmbedding)
+
+
+# ==================== Extractor Registry ====================
+
+def test_extractor_registry_default_returns_rule_extractor():
+    from neuralmem.extraction.extractor_registry import get_extractor
+    from neuralmem.extraction.extractor import MemoryExtractor
+    result = get_extractor(cfg())
+    assert isinstance(result, MemoryExtractor)
+
+
+def test_extractor_registry_ollama_returns_llm_extractor():
+    from neuralmem.extraction.extractor_registry import get_extractor
+    from neuralmem.extraction.llm_extractor import LLMExtractor
+    result = get_extractor(cfg(llm_extractor="ollama"))
+    assert isinstance(result, LLMExtractor)
+
+
+def test_extractor_registry_unknown_falls_back_to_rule():
+    from neuralmem.extraction.extractor_registry import get_extractor
+    from neuralmem.extraction.extractor import MemoryExtractor
+    result = get_extractor(cfg(llm_extractor="nonexistent"))
+    assert isinstance(result, MemoryExtractor)
