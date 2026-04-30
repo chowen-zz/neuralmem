@@ -26,10 +26,13 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-server = ["fastapi>=0.110", "uvicorn>=0.30"]
-openai = ["openai>=1.0"]
-ollama = ["httpx>=0.27"]
-reranker = ["sentence-transformers>=3.0"]
+server    = ["fastapi>=0.110", "uvicorn>=0.30"]
+openai    = ["openai>=1.0"]
+ollama    = ["httpx>=0.27"]
+reranker  = ["sentence-transformers>=3.0"]
+cohere    = ["cohere>=5.0"]
+gemini    = ["google-generativeai>=0.8"]
+anthropic = ["anthropic>=0.30"]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
@@ -38,7 +41,7 @@ dev = [
     "mypy>=1.10",
     "httpx>=0.27",
 ]
-all = ["neuralmem[server,openai,ollama,reranker]"]
+all = ["neuralmem[server,openai,ollama,reranker,cohere,gemini,anthropic]"]
 
 [project.scripts]
 neuralmem = "neuralmem.cli.main:main"
