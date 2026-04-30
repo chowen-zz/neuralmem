@@ -8,9 +8,8 @@ from neuralmem.core.config import NeuralMemConfig
 from neuralmem.core.types import Memory, MemoryType, MemoryScope, SearchResult, SearchQuery
 from neuralmem.core.exceptions import NeuralMemError
 from neuralmem.storage.sqlite import SQLiteStorage
-from neuralmem.embedding.local import LocalEmbedding
-from neuralmem.extraction.extractor import MemoryExtractor
-from neuralmem.extraction.llm_extractor import LLMExtractor
+from neuralmem.embedding.registry import get_embedder
+from neuralmem.extraction.extractor_registry import get_extractor
 from neuralmem.graph.knowledge_graph import KnowledgeGraph
 from neuralmem.retrieval.engine import RetrievalEngine
 from neuralmem.lifecycle.decay import DecayManager
@@ -45,14 +44,11 @@ class NeuralMem:
 
         # 初始化子系统
         self.storage = SQLiteStorage(self.config)
-        self.embedding = LocalEmbedding(self.config)
+        self.embedding = get_embedder(self.config)
         self.graph = KnowledgeGraph(self.storage)
 
-        # 提取器：优先使用 LLM（如果配置了的话）
-        if self.config.enable_llm_extraction:
-            self.extractor: MemoryExtractor | LLMExtractor = LLMExtractor(self.config)
-        else:
-            self.extractor = MemoryExtractor(self.config)
+        # 提取器：通过 registry 动态选择（config.llm_extractor 控制）
+        self.extractor = get_extractor(self.config)
 
         self.retrieval = RetrievalEngine(
             storage=self.storage,

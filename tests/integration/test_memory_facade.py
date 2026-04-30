@@ -135,3 +135,23 @@ def test_entity_resolver_prevents_duplicate_entities(mem):
     alice_nodes = [e for e in entities if "alice" in e.name.lower()]
     # 完全匹配 → 消歧后只有一个 Alice 节点
     assert len(alice_nodes) == 1
+
+
+def test_neuralmem_uses_embedding_registry(tmp_path):
+    """NeuralMem 应通过 registry 选择 embedder，默认为 LocalEmbedding。"""
+    from neuralmem.embedding.local import LocalEmbedding
+    from neuralmem.core.config import NeuralMemConfig
+    from neuralmem.core.memory import NeuralMem
+    cfg = NeuralMemConfig(db_path=str(tmp_path / "test.db"))
+    mem = NeuralMem(config=cfg)
+    assert isinstance(mem.embedding, LocalEmbedding)
+
+
+def test_neuralmem_uses_extractor_registry(tmp_path):
+    """NeuralMem 应通过 registry 选择 extractor，默认为 MemoryExtractor。"""
+    from neuralmem.extraction.extractor import MemoryExtractor
+    from neuralmem.core.config import NeuralMemConfig
+    from neuralmem.core.memory import NeuralMem
+    cfg = NeuralMemConfig(db_path=str(tmp_path / "test.db"))
+    mem = NeuralMem(config=cfg)
+    assert isinstance(mem.extractor, MemoryExtractor)
