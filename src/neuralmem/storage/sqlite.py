@@ -133,9 +133,9 @@ def _memory_from_row(row: sqlite3.Row) -> Memory:
             if "supersedes" in row.keys()
             else ()
         ),
-        created_at=datetime.fromisoformat(row["created_at"]),
-        updated_at=datetime.fromisoformat(row["updated_at"]),
-        last_accessed=datetime.fromisoformat(row["last_accessed"]),
+        created_at=datetime.fromisoformat(str(row["created_at"])),
+        updated_at=datetime.fromisoformat(str(row["updated_at"])),
+        last_accessed=datetime.fromisoformat(str(row["last_accessed"])),
         access_count=row["access_count"],
         embedding=list(_blob_to_embedding(row["embedding"])) if row["embedding"] else None,
         expires_at=expires_at,
@@ -461,7 +461,7 @@ class SQLiteStorage(StorageBackend):
         memory_types: list[MemoryType] | None,
         limit: int,
     ) -> list[tuple[str, float]]:
-        # vec0 KNN 查询，再 JOIN memories 过滤条件
+        # vec0 KNN 子查询 + JOIN memories 过滤条件
         conditions: list[str] = ["m.embedding IS NOT NULL"]
         conditions.append("(m.expires_at IS NULL OR m.expires_at > ?)")
         params: list[Any] = []
@@ -476,24 +476,29 @@ class SQLiteStorage(StorageBackend):
 
         where = " AND ".join(conditions)
         try:
+            # vec0 要求 MATCH + LIMIT 在同一查询中，使用子查询模式
             cur = self._execute(
                 f"""
                 SELECT m.id, v.distance
-                FROM memories_vec v
+                FROM (
+                    SELECT rowid, distance FROM memories_vec
+                    WHERE embedding MATCH ?
+                    ORDER BY distance LIMIT ?
+                ) v
                 JOIN memories m ON m.rowid = v.rowid
                 WHERE {where}
-                ORDER BY v.distance
                 LIMIT ?
                 """,
-                tuple(params) + (limit,),
+                (_embedding_to_blob(vector), limit * 3) + tuple(params) + (limit,),
             )
             rows = cur.fetchall()
             # distance 越小越相似，转换为相似度分数（余弦距离 = 1 - 余弦相似度）
             results = []
             for row in rows:
                 dist = row["distance"]
-                score = max(0.0, 1.0 - float(dist))
-                results.append((row["id"], score))
+                if dist is not None:
+                    score = max(0.0, 1.0 - float(dist))
+                    results.append((row["id"], score))
             return results
         except Exception as exc:
             _logger.warning("vec0 search failed (%s). Falling back to numpy.", exc)

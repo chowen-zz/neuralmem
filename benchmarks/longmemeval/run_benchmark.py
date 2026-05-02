@@ -1,5 +1,6 @@
 """运行 LongMemEval 基准测试"""
 from __future__ import annotations
+
 import argparse
 import json
 import logging

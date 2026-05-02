@@ -7,7 +7,7 @@ from neuralmem.core.config import NeuralMemConfig
 def test_default_config():
     cfg = NeuralMemConfig()
     assert "neuralmem" in cfg.db_path
-    assert cfg.embedding_model == "all-MiniLM-L6-v2"
+    assert cfg.embedding_model == "BAAI/bge-small-en-v1.5"
     assert cfg.enable_reranker is False
 
 

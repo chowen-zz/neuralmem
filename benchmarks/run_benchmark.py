@@ -26,7 +26,6 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 from neuralmem.core.config import NeuralMemConfig
 from neuralmem.core.memory import NeuralMem
 
-
 # ---------------------------------------------------------------------------
 # Deterministic mock embedder (same logic as tests/conftest.py)
 # ---------------------------------------------------------------------------

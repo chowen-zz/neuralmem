@@ -22,8 +22,8 @@ class NeuralMemConfig(BaseModel):
 
     # Embedding 配置
     embedding_model: str = Field(
-        default="all-MiniLM-L6-v2",
-        description="FastEmbed 模型名称",
+        default="BAAI/bge-small-en-v1.5",
+        description="FastEmbed 模型名称 (all-MiniLM-L6-v2 已不兼容 fastembed>=0.8)",
     )
     embedding_provider: str = Field(
         default="local",

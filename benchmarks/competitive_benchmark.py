@@ -424,14 +424,14 @@ def bench_feature_matrix() -> dict:
 
         # 12. Async API
         try:
-            from neuralmem.core.async_memory import AsyncNeuralMem
+            from neuralmem.core.async_memory import AsyncNeuralMem  # noqa: F401
             features["async_api"] = True
         except ImportError:
             features["async_api"] = False
 
         # 13. Metrics
         try:
-            from neuralmem.core.metrics import MetricsCollector
+            from neuralmem.core.metrics import MetricsCollector  # noqa: F401
             features["structured_metrics"] = True
         except ImportError:
             features["structured_metrics"] = False
@@ -599,8 +599,8 @@ def generate_competitive_comparison(neuralmem_results: dict) -> None:
     nm_wins = 0
     for feat, support in feature_comparison.items():
         row = [feat]
-        for sys in ["NeuralMem", "Mem0", "Zep", "Letta", "LangChain", "LlamaIndex"]:
-            row.append("✅" if support[sys] else "❌")
+        for system in ["NeuralMem", "Mem0", "Zep", "Letta", "LangChain", "LlamaIndex"]:
+            row.append("✅" if support[system] else "❌")
         rows.append(row)
         if support["NeuralMem"]:
             nm_wins += 1

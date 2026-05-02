@@ -19,7 +19,7 @@ def test_local_embedding_inherits_backend():
 
 
 def test_dimension_known_model():
-    cfg = NeuralMemConfig(embedding_model="all-MiniLM-L6-v2")
+    cfg = NeuralMemConfig(embedding_model="BAAI/bge-small-en-v1.5")
     emb = LocalEmbedding(cfg)
     assert emb.dimension == 384
 
@@ -31,8 +31,8 @@ def test_dimension_unknown_model():
 
 
 def test_known_dims_map():
-    assert "all-MiniLM-L6-v2" in _KNOWN_DIMS
-    assert _KNOWN_DIMS["all-MiniLM-L6-v2"] == 384
+    assert "BAAI/bge-small-en-v1.5" in _KNOWN_DIMS
+    assert _KNOWN_DIMS["BAAI/bge-small-en-v1.5"] == 384
 
 
 def test_model_not_loaded_on_init():

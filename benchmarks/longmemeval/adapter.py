@@ -1,8 +1,8 @@
 """NeuralMem LongMemEval 适配器"""
 from __future__ import annotations
+
 import logging
 from dataclasses import dataclass, field
-from typing import Any
 
 _logger = logging.getLogger(__name__)
 
