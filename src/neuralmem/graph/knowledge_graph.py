@@ -1,0 +1,232 @@
+"""NetworkX 知识图谱 — 内存级图谱 + SQLite 快照持久化"""
+from __future__ import annotations
+
+import json
+import logging
+import threading
+from collections import deque
+from typing import TYPE_CHECKING
+
+import networkx as nx
+
+from neuralmem.core.exceptions import GraphError
+from neuralmem.core.types import Entity, Relation
+from neuralmem.graph.entity import entity_to_node_attrs, node_attrs_to_entity
+from neuralmem.graph.relation import relation_to_edge_attrs
+
+if TYPE_CHECKING:
+    from neuralmem.storage.base import StorageBackend
+
+_logger = logging.getLogger(__name__)
+
+
+class KnowledgeGraph:
+    """基于 NetworkX DiGraph 的知识图谱，支持线程安全写入与 SQLite 快照持久化"""
+
+    _SNAPSHOT_KEY = "__graph_snapshot__"
+
+    def __init__(self, storage: StorageBackend) -> None:
+        self._graph: nx.DiGraph = nx.DiGraph()
+        self._lock = threading.Lock()
+        self._storage = storage
+        self._load_snapshot()
+
+    # ------------------------------------------------------------------
+    # 实体操作
+    # ------------------------------------------------------------------
+
+    def upsert_entity(self, entity: Entity) -> None:
+        """插入或更新实体节点"""
+        with self._lock:
+            if self._graph.has_node(entity.id):
+                existing = self._graph.nodes[entity.id]
+                attrs = entity_to_node_attrs(entity)
+                # 保留原 first_seen，更新其余字段
+                attrs["first_seen"] = existing.get("first_seen", attrs["first_seen"])
+                # 保留已有的 memory_ids
+                attrs["memory_ids"] = existing.get("memory_ids", [])
+                self._graph.nodes[entity.id].update(attrs)
+            else:
+                attrs = entity_to_node_attrs(entity)
+                attrs["memory_ids"] = []
+                self._graph.add_node(entity.id, **attrs)
+        self._save_snapshot_async()
+
+    def get_entity(self, entity_id: str) -> Entity | None:
+        """按 ID 查询实体，不存在返回 None"""
+        with self._lock:
+            if not self._graph.has_node(entity_id):
+                return None
+            return node_attrs_to_entity(entity_id, dict(self._graph.nodes[entity_id]))
+
+    def get_entities(self, user_id: str | None = None) -> list[Entity]:
+        """获取实体列表，可按 user_id 过滤。
+
+        过滤语义：仅排除 attributes["user_id"] 明确属于其他用户的实体；
+        没有 user_id 属性的实体（共享/未标注）始终包含。
+        过滤依赖实体 attributes 中的 user_id 字段，需在 upsert_entity 时通过
+        attributes 传入才能生效隔离。
+        """
+        with self._lock:
+            entities = [
+                node_attrs_to_entity(nid, dict(attrs))
+                for nid, attrs in self._graph.nodes(data=True)
+            ]
+        if user_id is None:
+            return entities
+        return [
+            e for e in entities
+            if e.attributes.get("user_id") in (None, user_id)
+        ]
+
+    def find_entities(self, query: str) -> list[Entity]:
+        """按名字模糊匹配（不区分大小写）"""
+        q = query.lower()
+        with self._lock:
+            return [
+                node_attrs_to_entity(nid, dict(attrs))
+                for nid, attrs in self._graph.nodes(data=True)
+                if q in attrs.get("name", "").lower()
+            ]
+
+    # ------------------------------------------------------------------
+    # 关系操作
+    # ------------------------------------------------------------------
+
+    def add_relation(self, relation: Relation) -> None:
+        """添加有向边；若边已存在则取权重平均值"""
+        with self._lock:
+            src, tgt = relation.source_id, relation.target_id
+            attrs = relation_to_edge_attrs(relation)
+            if self._graph.has_edge(src, tgt):
+                old_weight = self._graph[src][tgt].get("weight", relation.weight)
+                attrs["weight"] = (old_weight + relation.weight) / 2.0
+                self._graph[src][tgt].update(attrs)
+            else:
+                self._graph.add_edge(src, tgt, **attrs)
+        self._save_snapshot_async()
+
+    # ------------------------------------------------------------------
+    # 图遍历
+    # ------------------------------------------------------------------
+
+    def get_neighbors(self, entity_ids: list[str], depth: int = 1) -> list[Entity]:
+        """BFS 获取邻居，排除输入节点本身"""
+        seed_set = set(entity_ids)
+        visited: set[str] = set(entity_ids)
+        queue: deque[tuple[str, int]] = deque((eid, 0) for eid in entity_ids)
+        result: list[Entity] = []
+
+        with self._lock:
+            while queue:
+                nid, d = queue.popleft()
+                if d >= depth:
+                    continue
+                for neighbor in self._graph.successors(nid):
+                    if neighbor not in visited:
+                        visited.add(neighbor)
+                        if neighbor not in seed_set and self._graph.has_node(neighbor):
+                            result.append(
+                                node_attrs_to_entity(
+                                    neighbor, dict(self._graph.nodes[neighbor])
+                                )
+                            )
+                        queue.append((neighbor, d + 1))
+        return result
+
+    def traverse_for_memories(
+        self,
+        entity_ids: list[str],
+        depth: int = 2,
+        user_id: str | None = None,
+    ) -> list[tuple[str, float]]:
+        """遍历图谱收集关联记忆 ID，距离越近分数越高
+
+        Returns:
+            list of (memory_id, score)
+        """
+        depth_scores = {1: 0.9, 2: 0.6}
+        results: dict[str, float] = {}
+
+        visited: set[str] = set(entity_ids)
+        queue: deque[tuple[str, int]] = deque((eid, 0) for eid in entity_ids)
+
+        with self._lock:
+            # 先收集种子节点自身的记忆
+            for eid in entity_ids:
+                if self._graph.has_node(eid):
+                    for mid in self._graph.nodes[eid].get("memory_ids", []):
+                        results[mid] = max(results.get(mid, 0.0), 1.0)
+
+            while queue:
+                nid, d = queue.popleft()
+                if d >= depth:
+                    continue
+                for neighbor in self._graph.successors(nid):
+                    if neighbor not in visited:
+                        visited.add(neighbor)
+                        score = depth_scores.get(d + 1, 0.3)
+                        if self._graph.has_node(neighbor):
+                            for mid in self._graph.nodes[neighbor].get("memory_ids", []):
+                                results[mid] = max(results.get(mid, 0.0), score)
+                        queue.append((neighbor, d + 1))
+
+        return list(results.items())
+
+    # ------------------------------------------------------------------
+    # 记忆关联
+    # ------------------------------------------------------------------
+
+    def link_memory_to_entity(self, memory_id: str, entity_id: str) -> None:
+        """在节点上追加关联的记忆 ID"""
+        with self._lock:
+            if not self._graph.has_node(entity_id):
+                raise GraphError(f"Entity not found: {entity_id}")
+            node = self._graph.nodes[entity_id]
+            node["memory_ids"] = list(set(node.get("memory_ids", []) + [memory_id]))
+        self._save_snapshot_async()
+
+    # ------------------------------------------------------------------
+    # 持久化
+    # ------------------------------------------------------------------
+
+    def _load_snapshot(self) -> None:
+        """从 storage 加载快照；不存在则静默忽略"""
+        try:
+            raw = self._storage.load_graph_snapshot()
+            if raw is None:
+                return
+            data = raw if isinstance(raw, dict) else json.loads(raw)
+            self._graph = nx.node_link_graph(data)
+            _logger.debug("Graph snapshot loaded: %d nodes", self._graph.number_of_nodes())
+        except Exception as exc:  # noqa: BLE001
+            _logger.debug("No graph snapshot loaded (%s)", exc)
+
+    def _save_snapshot_async(self) -> None:
+        """后台持久化图谱快照（在调用线程持锁序列化，后台线程仅负责 I/O，消除锁竞争）"""
+        try:
+            with self._lock:
+                data = nx.node_link_data(self._graph)
+        except Exception:  # noqa: BLE001
+            return
+
+        def _worker() -> None:
+            try:
+                self._storage.save_graph_snapshot(data)
+                _logger.debug("Graph snapshot saved: %d nodes", len(data.get("nodes", [])))
+            except Exception as exc:  # noqa: BLE001
+                _logger.debug("Graph snapshot save failed: %s", exc)
+
+        threading.Thread(target=_worker, daemon=True).start()
+
+    # ------------------------------------------------------------------
+    # 统计
+    # ------------------------------------------------------------------
+
+    def get_stats(self) -> dict:
+        """返回节点数与边数统计"""
+        with self._lock:
+            return {
+                "node_count": self._graph.number_of_nodes(),
+                "edge_count": self._graph.number_of_edges(),
+            }
