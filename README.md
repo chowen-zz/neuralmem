@@ -92,6 +92,8 @@ NeuralMem implements the standard MCP protocol — one config line to connect:
 | **Continue** | `~/.continue/config.json` → `mcpServers` |
 | **Zed** | `~/.config/zed/settings.json` → `mcp.servers` |
 | **ChatBox / Cherry Studio / Trae** | Settings → MCP Servers |
+| **OpenAI Codex** | `~/.codex/config.toml` → `[mcp_servers.neuralmem]` |
+| **Hermes Agent** | `hermes-agent.yaml` → `mcp_servers.neuralmem` |
 
 > Full config examples (HTTP mode, env vars, troubleshooting): [docs/mcp-integrations.md](docs/mcp-integrations.md)
 

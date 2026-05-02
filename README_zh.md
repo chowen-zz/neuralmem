@@ -94,6 +94,8 @@ NeuralMem 实现标准 MCP 协议，一行配置即可接入：
 | **Continue** | `~/.continue/config.json` → `mcpServers` |
 | **Zed** | `~/.config/zed/settings.json` → `mcp.servers` |
 | **ChatBox / Cherry Studio / Trae** | Settings → MCP Servers |
+| **OpenAI Codex** | `~/.codex/config.toml` → `[mcp_servers.neuralmem]` |
+| **Hermes Agent** | `hermes-agent.yaml` → `mcp_servers.neuralmem` |
 
 > 完整配置示例（含 HTTP 模式、环境变量、故障排查）：[docs/mcp-integrations.md](docs/mcp-integrations.md)
 

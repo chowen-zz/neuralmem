@@ -293,7 +293,61 @@ neuralmem mcp --http
 
 ---
 
-## 13. Node.js / npm 接入
+## 13. OpenAI Codex CLI
+
+Codex CLI 使用 TOML 格式配置。编辑 `~/.codex/config.toml`（全局）或项目 `.codex/config.toml`：
+
+```toml
+[mcp_servers.neuralmem]
+command = "neuralmem"
+args = ["mcp"]
+
+[mcp_servers.neuralmem.env]
+NEURALMEM_DB_PATH = "~/.neuralmem/memory.db"
+```
+
+或通过命令行添加：
+```bash
+codex mcp add neuralmem -- neuralmem mcp
+```
+
+查看已配置的 MCP 服务器：
+```bash
+codex mcp list
+```
+
+> 在 Codex TUI 中输入 `/mcp` 可查看当前活跃的 MCP 服务器状态。
+
+---
+
+## 14. Hermes Agent
+
+Hermes Agent 使用 YAML 格式配置 MCP 服务器。编辑 `hermes-agent.yaml`（项目级）或 `~/.hermes-agent/config.yaml`（全局）：
+
+```yaml
+mcp_servers:
+  neuralmem:
+    command: neuralmem
+    args:
+      - "mcp"
+    env:
+      NEURALMEM_DB_PATH: "~/.neuralmem/memory.db"
+```
+
+如需连接已运行的 HTTP 模式服务器：
+
+```yaml
+mcp_servers:
+  neuralmem:
+    url: http://localhost:8000/mcp
+    transport: sse
+```
+
+> Hermes Agent 启动时自动连接所有 `enabled: true`（默认）的 MCP 服务器。
+
+---
+
+## 15. Node.js / npm 接入
 
 ```bash
 npm install neuralmem
