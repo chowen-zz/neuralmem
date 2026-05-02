@@ -6,7 +6,7 @@
 
 Agent 记忆领域的 SQLite —— 零依赖安装，本地优先，企业可扩展。
 
-[![Tests](https://img.shields.io/badge/tests-160%20passing-brightgreen)](https://github.com/chowen-zz/neuralmem)
+[![Tests](https://img.shields.io/badge/tests-425%20passing-brightgreen)](https://github.com/chowen-zz/neuralmem)
 [![Coverage](https://img.shields.io/badge/coverage-83%25-green)](https://github.com/chowen-zz/neuralmem)
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue)](https://pypi.org/project/neuralmem/)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
@@ -75,7 +75,7 @@ BM25 关键词 → 捕获精确术语匹配
 ```python
 # 定期调用 consolidate 应用遗忘曲线
 stats = mem.consolidate()
-# {"decayed": 12, "forgotten": 3, "merged": 0}
+# {"decayed": 12, "forgotten": 3, "merged": 2}
 ```
 
 ### 知识图谱
@@ -87,6 +87,17 @@ report = mem.reflect("Alice 的技术栈")
 
 ### 实体消歧
 "Alice"、"我同事 Alice"、"她" 自动识别为同一实体，图谱不产生重复节点。
+
+### 记忆 TTL 与过期
+```python
+mem.remember("临时会话上下文", ttl=3600)  # 1 小时后自动过期
+```
+
+### 批量操作与导入
+```python
+mem.batch_remember(["事实1", "事实2", "事实3"])  # 批量存储
+mem.import_memories(existing_memories)               # 导入已有记忆
+```
 
 ## CLI
 
@@ -102,25 +113,79 @@ neuralmem mcp                           # 启动 MCP Server
 ```bash
 # 启用 Cross-Encoder 重排序（~67MB 模型）
 pip install neuralmem[reranker]
+
+# 使用 PostgreSQL + pgvector 替代 SQLite
+pip install neuralmem[postgres]
 ```
 
 ```python
 from neuralmem import NeuralMem
 from neuralmem.core.config import NeuralMemConfig
 
+# 启用重排序
 mem = NeuralMem(config=NeuralMemConfig(enable_reranker=True))
+
+# 使用 PostgreSQL
+config = NeuralMemConfig(
+    storage_backend="postgres",
+    postgres_url="postgresql://user:pass@localhost:5432/neuralmem"
+)
+mem = NeuralMem(config=config)
+
+# 使用 Ollama 本地 LLM 提取
+config = NeuralMemConfig(llm_extractor="ollama")
+mem = NeuralMem(config=config)
 ```
 
 ## 与竞品对比
 
-| 特性 | NeuralMem | Mem0 | Zep |
-|------|-----------|------|-----|
-| 本地运行 | ✅ 零依赖 | ❌ 需 Docker | ❌ 需 Neo4j |
-| 图谱功能 | ✅ 免费 | ❌ $249/月 | ✅ 需 Neo4j |
-| MCP 原生 | ✅ | ✅ | ✅ |
-| 遗忘曲线 | ✅ | ❌ | ❌ |
-| 实体消歧 | ✅ | ❌ | ✅ |
-| 开源协议 | Apache-2.0 | Apache-2.0 | Apache-2.0 |
+> 详细分析见 [docs/competitive-analysis.md](docs/competitive-analysis.md)
+
+### 概览
+
+| 维度 | NeuralMem | Mem0 | Zep (Graphiti) | Letta (MemGPT) | LangChain Memory |
+|------|-----------|------|----------------|----------------|------------------|
+| **Stars** | 新项目 | 54.6k | 25.6k | 22.4k | 136k (框架) |
+| **定位** | 本地记忆库 | 通用记忆层 | 时序图谱 | Agent 平台 | 框架模块 |
+| **本地优先** | ✅ 零依赖 | ⚠️ 推荐云端 | ⚠️ 需 Docker+Neo4j | ✅ 可自托管 | ✅ |
+| **MCP 原生** | ✅ stdio | ✅ 云端 HTTP | ✅ 本地 | ⚠️ 间接 | ✅ 内置 |
+| **定价** | **免费** | $0-249/月 | $0-125/月 | $0-200/月 | 免费 |
+
+### 功能矩阵
+
+| 功能 | NeuralMem | Mem0 | Zep | Letta | LangChain |
+|------|-----------|------|-----|-------|-----------|
+| **混合检索** | ✅ 4策略 RRF | ✅ 3策略 | ✅ 3策略 | ❌ | ❌ |
+| **知识图谱** | ✅ NetworkX | ❌ (已移除) | ✅ Neo4j | ❌ | ❌ |
+| **BM25 关键词** | ✅ | ✅ | ✅ | ❌ | ❌ |
+| **时间衰减** | ✅ | ❌ | ✅ | ❌ | ❌ |
+| **冲突检测** | ✅ supersede | ❌ | ✅ 事实失效 | ❌ | ❌ |
+| **遗忘曲线** | ✅ | ❌ | ❌ | ✅ sleep-time | ❌ |
+| **Cross-Encoder 重排** | ✅ | ⚠️ 平台 | ❌ | ❌ | ❌ |
+| **可解释性** | ✅ explanation | ❌ | ❌ | ❌ | ❌ |
+| **TTL 过期** | ✅ | ❌ | ✅ | ❌ | ❌ |
+| **批量操作** | ✅ | ✅ | ❌ | ❌ | ❌ |
+| **Embedding 选择** | 7 种 (含本地) | 17+ LLM | 1 种 | 1 种 | 多种 |
+
+### NeuralMem 的独特优势
+
+| vs 竞品 | NeuralMem 的差异化 |
+|---------|-------------------|
+| **vs Mem0** | 图谱免费 (Mem0 v3.0 已从 OSS 移除图谱); 本地优先 vs 云优先; 完全免费 vs $249/月 |
+| **vs Zep** | 无需 Docker/Neo4j; NetworkX 轻量图谱; 零成本 vs $125/月 |
+| **vs Letta** | 纯记忆层可组合; 4 策略检索 vs 简单归档; 但无 Skills/Sleep-time |
+| **vs LangChain** | 开箱即用 vs 需自行构建; 自动提取 vs 手动; 但灵活性不如 |
+| **vs LlamaIndex** | 4 策略检索 vs Memory Block; 知识图谱 vs 扁平存储 |
+
+### 定价对比
+
+```
+NeuralMem  ██████████████████████████████  免费 (本地运行, 无限制)
+Mem0 Free  ████████░░░░░░░░░░░░░░░░░░░░░░  10K add/月
+Mem0 Pro   ██████████████████████████████  $249/月 (500K add)
+Zep Flex   ██████████████████████████████  $125/月 (50K credits)
+Letta Pro  ██████████████████████████████  $20/月 (基础)
+```
 
 ## 许可证
 
