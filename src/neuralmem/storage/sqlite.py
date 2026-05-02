@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import sqlite3
 import threading
 from datetime import datetime, timezone
@@ -104,7 +105,9 @@ def _embedding_to_blob(embedding: list[float]) -> bytes:
     return np.array(embedding, dtype=np.float32).tobytes()
 
 
-def _blob_to_embedding(blob: bytes) -> np.ndarray:
+def _blob_to_embedding(blob: bytes | None) -> np.ndarray:
+    if blob is None:
+        return np.array([], dtype=np.float32)
     return np.frombuffer(blob, dtype=np.float32)
 
 
@@ -331,7 +334,7 @@ class SQLiteStorage(StorageBackend):
             "tags", "source", "importance", "entity_ids", "embedding",
             "is_active", "superseded_by", "supersedes",
             "session_layer", "conversation_id",
-            "expires_at",
+            "expires_at", "access_count", "last_accessed", "updated_at",
         }
         updates: dict[str, Any] = {}
         for key, value in kwargs.items():
@@ -526,11 +529,33 @@ class SQLiteStorage(StorageBackend):
         scored: list[tuple[str, float]] = []
         for row in rows:
             emb = _blob_to_embedding(row["embedding"])
+            if emb.size == 0:
+                continue
             score = _cosine_similarity(query_vec, emb)
             scored.append((row["id"], score))
 
         scored.sort(key=lambda x: x[1], reverse=True)
         return scored[:limit]
+
+    @staticmethod
+    def _sanitize_fts5_query(query: str) -> str:
+        """Sanitize a user query for FTS5 MATCH.
+
+        FTS5 treats ``?``, ``*``, ``"``, ``OR``, ``AND``, ``NOT``, ``NEAR``
+        and column filters as operators.  We want plain full-text matching, so
+        we extract alphanumeric tokens, quote each one, and join with implicit
+        OR (space-separated).
+        """
+        # Extract word-like tokens (alphanumeric + CJK)
+        tokens = re.findall(r"[\w\u4e00-\u9fff]+", query)
+        if not tokens:
+            # Fallback: strip anything that isn't a word char
+            cleaned = re.sub(r"[^\w\s]", " ", query).strip()
+            tokens = cleaned.split()
+        if not tokens:
+            return '""'  # empty match → no results
+        # Quote each token so FTS5 treats it as a literal term
+        return " OR ".join(f'"{t}"' for t in tokens)
 
     def keyword_search(
         self,
@@ -540,9 +565,10 @@ class SQLiteStorage(StorageBackend):
         limit: int = 10,
     ) -> list[tuple[str, float]]:
         # FTS5 BM25（rank 值为负数，越小越相关）
+        fts_query = self._sanitize_fts5_query(query)
         join_conditions: list[str] = []
         join_conditions.append("(m.expires_at IS NULL OR m.expires_at > ?)")
-        params: list[Any] = [query]
+        params: list[Any] = [fts_query]
         params.append(_now_iso())
         if user_id is not None:
             join_conditions.append("m.user_id = ?")

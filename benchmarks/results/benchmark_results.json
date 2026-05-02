@@ -1,0 +1,68 @@
+{
+  "performance": {
+    "throughput": {
+      "1": {
+        "time": 0.0014192501548677683,
+        "throughput": 704.597421793602,
+        "stored": 1
+      },
+      "10": {
+        "time": 0.002004791982471943,
+        "throughput": 2494.024339540162,
+        "stored": 5
+      },
+      "50": {
+        "time": 0.008151500020176172,
+        "throughput": 1962.8289223330216,
+        "stored": 16
+      },
+      "100": {
+        "time": 0.014555000001564622,
+        "throughput": 1167.9835106954688,
+        "stored": 17
+      }
+    },
+    "recall_latency": {
+      "100": {
+        "count": 50,
+        "mean_ms": 0.8473266987130046,
+        "p50_ms": 0.7921250071376562,
+        "p95_ms": 1.1504590511322021,
+        "p99_ms": 2.058333018794656
+      },
+      "500": {
+        "count": 50,
+        "mean_ms": 1.1215808056294918,
+        "p50_ms": 0.99024991504848,
+        "p95_ms": 1.563583966344595,
+        "p99_ms": 6.003374932333827
+      }
+    }
+  },
+  "quality": {
+    "total_questions": 50,
+    "recall_at_1": 0.08,
+    "recall_at_3": 0.12,
+    "recall_at_5": 0.12,
+    "recall_at_10": 0.12,
+    "mrr": 0.1,
+    "avg_top_score": 0.8664271921759465
+  },
+  "features": {
+    "basic_remember_recall": true,
+    "entity_extraction": true,
+    "knowledge_graph": true,
+    "conflict_detection": true,
+    "ttl_expiry": true,
+    "batch_operations": true,
+    "consolidation": false,
+    "reflect": true,
+    "forget": true,
+    "export": true,
+    "mcp_server": true,
+    "async_api": true,
+    "structured_metrics": true,
+    "multi_embedding": true,
+    "bm25_keyword": true
+  }
+}
