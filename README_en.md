@@ -40,6 +40,32 @@ for r in results:
     print(f"[{r.score:.2f}] {r.memory.content}")
 ```
 
+## Node.js / npm
+
+```bash
+npm install neuralmem
+```
+
+```typescript
+import { NeuralMem } from "neuralmem";
+
+const mem = new NeuralMem();
+await mem.connect();
+
+await mem.remember("User prefers TypeScript", { tags: ["preferences"] });
+
+const results = await mem.recall("TypeScript");
+for (const r of results) {
+  console.log(`[${r.score.toFixed(2)}] ${r.memory.content}`);
+}
+
+await mem.disconnect();
+```
+
+> Requires Python 3.10+ and neuralmem installed locally (`pip install neuralmem`). The npm package auto-starts the Python backend via MCP stdio.
+
+See [`npm/README.md`](npm/README.md) for details.
+
 ## MCP Integration with Claude Desktop
 
 Add the following to `~/Library/Application Support/Claude/claude_desktop_config.json`:
