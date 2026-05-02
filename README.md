@@ -69,9 +69,9 @@ await mem.disconnect();
 
 详见 [`npm/README.md`](npm/README.md)。
 
-## MCP 接入 Claude Desktop
+## MCP 接入（支持 10+ 主流 AI 客户端）
 
-编辑 `~/Library/Application Support/Claude/claude_desktop_config.json`：
+NeuralMem 实现标准 MCP 协议，一行配置即可接入：
 
 ```json
 {
@@ -84,7 +84,20 @@ await mem.disconnect();
 }
 ```
 
-接入后 Claude 可以调用 5 个工具：`remember`、`recall`、`reflect`、`forget`、`consolidate`。
+| 客户端 | 配置文件位置 |
+|--------|-------------|
+| **Claude Desktop** | `~/Library/Application Support/Claude/claude_desktop_config.json` |
+| **Claude Code** | `claude mcp add neuralmem -- neuralmem mcp` |
+| **Cursor** | `.cursor/mcp.json`（项目级）或 `~/.cursor/mcp.json`（全局） |
+| **Windsurf** | `~/.codeium/windsurf/mcp_config.json` |
+| **Cline (VS Code)** | `~/.cline/mcp_settings.json` |
+| **Continue** | `~/.continue/config.json` → `mcpServers` |
+| **Zed** | `~/.config/zed/settings.json` → `mcp.servers` |
+| **ChatBox / Cherry Studio / Trae** | Settings → MCP Servers |
+
+> 完整配置示例（含 HTTP 模式、环境变量、故障排查）：[docs/mcp-integrations.md](docs/mcp-integrations.md)
+
+接入后可用 10 个工具：`remember`、`recall`、`reflect`、`forget`、`consolidate`、`remember_batch`、`forget_batch`、`export_memories`、`resolve_conflict`、`recall_with_explanation`。
 
 ## 核心特性
 

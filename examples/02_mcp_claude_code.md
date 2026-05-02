@@ -1,14 +1,10 @@
-# 将 NeuralMem 接入 Claude Desktop / Claude Code
+# 将 NeuralMem 接入 AI 客户端
 
-## 安装
+> 完整的多平台配置指南：[docs/mcp-integrations.md](../docs/mcp-integrations.md)
 
-```bash
-pip install neuralmem
-```
+## 快速配置
 
-## Claude Desktop 配置
-
-编辑 `~/Library/Application Support/Claude/claude_desktop_config.json`（macOS）：
+所有支持 MCP 的客户端都使用同一配置格式：
 
 ```json
 {
@@ -24,55 +20,45 @@ pip install neuralmem
 }
 ```
 
-## Claude Code 配置
+## 按客户端查看配置
 
-在项目根目录创建 `.claude/mcp.json`：
+| 客户端 | 配置位置 |
+|--------|---------|
+| Claude Desktop | `~/Library/Application Support/Claude/claude_desktop_config.json` |
+| Claude Code | `.claude/mcp.json` 或 `claude mcp add neuralmem -- neuralmem mcp` |
+| Cursor | `.cursor/mcp.json` |
+| Windsurf | `~/.codeium/windsurf/mcp_config.json` |
+| Cline (VS Code) | `~/.cline/mcp_settings.json` |
+| Continue | `~/.continue/config.json` |
+| Zed | `~/.config/zed/settings.json` |
+| ChatBox / Cherry Studio / Trae | Settings → MCP Servers |
 
-```json
-{
-  "mcpServers": {
-    "neuralmem": {
-      "command": "neuralmem",
-      "args": ["mcp"]
-    }
-  }
-}
-```
-
-## 可用工具
-
-接入后，Claude 可以使用以下工具：
+## 可用工具（10 个）
 
 | 工具 | 功能 |
 |------|------|
 | `remember` | 存储记忆（自动提取实体和关系） |
 | `recall` | 检索相关记忆（4策略并行 + RRF 融合） |
-| `reflect` | 对主题进行多跳推理总结 |
-| `forget` | 删除指定记忆（支持 GDPR 合规） |
-| `consolidate` | 后台整理：衰减旧记忆、合并重复 |
+| `reflect` | 更新记忆 |
+| `forget` | 删除记忆 |
+| `consolidate` | 合并相似记忆 |
+| `remember_batch` | 批量存储 |
+| `forget_batch` | 批量删除 |
+| `export_memories` | 导出（JSON/CSV/Markdown） |
+| `resolve_conflict` | 解决记忆冲突 |
+| `recall_with_explanation` | 带解释的检索 |
 
-## 使用示例
+## HTTP 模式
 
-在 Claude 对话中，Claude 会自动调用这些工具：
-
-- "记住这个项目使用 PostgreSQL 和 React"
-  → Claude 调用 `remember` 存储技术栈信息
-
-- "我们之前用什么数据库？"
-  → Claude 调用 `recall` 检索相关记忆
+```bash
+neuralmem mcp --http
+# → http://localhost:8000/mcp
+```
 
 ## CLI 快速测试
 
 ```bash
-# 添加记忆
 neuralmem add "用户偏好 TypeScript"
-
-# 搜索记忆
 neuralmem search "编程语言偏好"
-
-# 查看统计
 neuralmem stats
-
-# 启动 MCP Server（stdio 模式）
-neuralmem mcp
 ```

@@ -66,9 +66,9 @@ await mem.disconnect();
 
 See [`npm/README.md`](npm/README.md) for details.
 
-## MCP Integration with Claude Desktop
+## MCP Integration (10+ AI Clients Supported)
 
-Add the following to `~/Library/Application Support/Claude/claude_desktop_config.json`:
+NeuralMem implements the standard MCP protocol — one config line to connect:
 
 ```json
 {
@@ -81,7 +81,20 @@ Add the following to `~/Library/Application Support/Claude/claude_desktop_config
 }
 ```
 
-Once connected, Claude gains access to five tools: `remember`, `recall`, `reflect`, `forget`, and `consolidate`.
+| Client | Config File |
+|--------|-------------|
+| **Claude Desktop** | `~/Library/Application Support/Claude/claude_desktop_config.json` |
+| **Claude Code** | `claude mcp add neuralmem -- neuralmem mcp` |
+| **Cursor** | `.cursor/mcp.json` (project) or `~/.cursor/mcp.json` (global) |
+| **Windsurf** | `~/.codeium/windsurf/mcp_config.json` |
+| **Cline (VS Code)** | `~/.cline/mcp_settings.json` |
+| **Continue** | `~/.continue/config.json` → `mcpServers` |
+| **Zed** | `~/.config/zed/settings.json` → `mcp.servers` |
+| **ChatBox / Cherry Studio / Trae** | Settings → MCP Servers |
+
+> Full config examples (HTTP mode, env vars, troubleshooting): [docs/mcp-integrations.md](docs/mcp-integrations.md)
+
+Once connected, 10 tools are available: `remember`, `recall`, `reflect`, `forget`, `consolidate`, `remember_batch`, `forget_batch`, `export_memories`, `resolve_conflict`, `recall_with_explanation`.
 
 ## Core Features
 
