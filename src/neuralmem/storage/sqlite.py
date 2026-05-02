@@ -37,7 +37,8 @@ CREATE TABLE IF NOT EXISTS memories (
     is_active INTEGER DEFAULT 1,
     superseded_by TEXT,
     supersedes TEXT DEFAULT '[]',
-    embedding BLOB
+    embedding BLOB,
+    expires_at TEXT
 )
 """
 
@@ -56,6 +57,33 @@ CREATE TABLE IF NOT EXISTS graph_snapshots (
     key TEXT PRIMARY KEY,
     data TEXT NOT NULL,
     updated_at TEXT NOT NULL
+)
+"""
+
+_CREATE_GRAPH_NODES = """
+CREATE TABLE IF NOT EXISTS graph_nodes (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    entity_type TEXT NOT NULL DEFAULT 'unknown',
+    aliases TEXT DEFAULT '[]',
+    attributes TEXT DEFAULT '{}',
+    first_seen TEXT NOT NULL,
+    last_seen TEXT NOT NULL,
+    memory_ids TEXT DEFAULT '[]',
+    updated_at TEXT NOT NULL
+)
+"""
+
+_CREATE_GRAPH_EDGES = """
+CREATE TABLE IF NOT EXISTS graph_edges (
+    source_id TEXT NOT NULL,
+    target_id TEXT NOT NULL,
+    relation_type TEXT NOT NULL,
+    weight REAL NOT NULL DEFAULT 1.0,
+    timestamp TEXT NOT NULL,
+    metadata TEXT DEFAULT '{}',
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (source_id, target_id)
 )
 """
 
@@ -81,6 +109,8 @@ def _blob_to_embedding(blob: bytes) -> np.ndarray:
 
 
 def _memory_from_row(row: sqlite3.Row) -> Memory:
+    expires_at_raw = row["expires_at"] if "expires_at" in row.keys() else None
+    expires_at = datetime.fromisoformat(expires_at_raw) if expires_at_raw else None
     return Memory(
         id=row["id"],
         content=row["content"],
@@ -105,6 +135,7 @@ def _memory_from_row(row: sqlite3.Row) -> Memory:
         last_accessed=datetime.fromisoformat(row["last_accessed"]),
         access_count=row["access_count"],
         embedding=list(_blob_to_embedding(row["embedding"])) if row["embedding"] else None,
+        expires_at=expires_at,
     )
 
 
@@ -113,7 +144,7 @@ class SQLiteStorage(StorageBackend):
 
     def __init__(self, config: NeuralMemConfig) -> None:
         self._config = config
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
         self._vec_available = False
         self._dim = config.embedding_dim
         db_path = config.get_db_path()
@@ -130,6 +161,8 @@ class SQLiteStorage(StorageBackend):
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA synchronous=NORMAL")
+        conn.execute("PRAGMA mmap_size=268435456")
+        conn.execute("PRAGMA cache_size=-64000")  # 64MB cache
         conn.execute("PRAGMA foreign_keys=ON")
         return conn
 
@@ -149,6 +182,8 @@ class SQLiteStorage(StorageBackend):
             self._conn.execute(_CREATE_MEMORIES)
             self._conn.execute(_CREATE_FTS)
             self._conn.execute(_CREATE_GRAPH_SNAPSHOTS)
+            self._conn.execute(_CREATE_GRAPH_NODES)
+            self._conn.execute(_CREATE_GRAPH_EDGES)
             # Migration: add new columns if they don't exist
             self._migrate_schema()
             if self._vec_available:
@@ -157,6 +192,22 @@ class SQLiteStorage(StorageBackend):
                 except Exception as exc:
                     _logger.warning("Failed to create vec0 table (%s). Falling back to numpy.", exc)
                     self._vec_available = False
+            # Create indexes for common query patterns
+            self._conn.execute(
+                'CREATE INDEX IF NOT EXISTS idx_memories_user_id ON memories(user_id)'
+            )
+            self._conn.execute(
+                'CREATE INDEX IF NOT EXISTS idx_memories_is_active ON memories(is_active)'
+            )
+            self._conn.execute(
+                'CREATE INDEX IF NOT EXISTS idx_memories_created_at ON memories(created_at)'
+            )
+            self._conn.execute(
+                'CREATE INDEX IF NOT EXISTS idx_memories_importance ON memories(importance)'
+            )
+            self._conn.execute(
+                'CREATE INDEX IF NOT EXISTS idx_memories_session_id ON memories(session_id)'
+            )
             self._conn.commit()
 
     def _migrate_schema(self) -> None:
@@ -169,6 +220,7 @@ class SQLiteStorage(StorageBackend):
             ("supersedes", "TEXT DEFAULT '[]'"),
             ("session_layer", "TEXT DEFAULT 'long_term'"),
             ("conversation_id", "TEXT"),
+            ("expires_at", "TEXT"),
         ]
         for col, col_def in migrations:
             if col not in existing:
@@ -181,7 +233,8 @@ class SQLiteStorage(StorageBackend):
 
     def _execute(self, sql: str, params: tuple[Any, ...] = ()) -> sqlite3.Cursor:
         try:
-            return self._conn.execute(sql, params)
+            with self._lock:
+                return self._conn.execute(sql, params)
         except sqlite3.Error as exc:
             raise StorageError(f"SQLite error: {exc}") from exc
 
@@ -198,6 +251,9 @@ class SQLiteStorage(StorageBackend):
         session_layer = getattr(memory, '_session_layer', 'long_term')
         conversation_id = getattr(memory, '_conversation_id', None)
 
+        # Convert expires_at to ISO string
+        expires_at_str = memory.expires_at.isoformat() if memory.expires_at else None
+
         with self._lock:
             supersedes_json = json.dumps(list(memory.supersedes))
             self._execute(
@@ -207,8 +263,8 @@ class SQLiteStorage(StorageBackend):
                      tags, source, importance, entity_ids,
                      is_active, superseded_by, supersedes,
                      created_at, updated_at, last_accessed, access_count, embedding,
-                     session_layer, conversation_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     session_layer, conversation_id, expires_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     memory.id,
@@ -232,6 +288,7 @@ class SQLiteStorage(StorageBackend):
                     embedding_blob,
                     session_layer,
                     conversation_id,
+                    expires_at_str,
                 ),
             )
             # 同步 FTS
@@ -274,6 +331,7 @@ class SQLiteStorage(StorageBackend):
             "tags", "source", "importance", "entity_ids", "embedding",
             "is_active", "superseded_by", "supersedes",
             "session_layer", "conversation_id",
+            "expires_at",
         }
         updates: dict[str, Any] = {}
         for key, value in kwargs.items():
@@ -293,6 +351,10 @@ class SQLiteStorage(StorageBackend):
                 updates["memory_type"] = value.value
             elif key == "scope" and isinstance(value, MemoryScope):
                 updates["scope"] = value.value
+            elif key == "expires_at":
+                updates["expires_at"] = (
+                    value.isoformat() if isinstance(value, datetime) else value
+                )
             else:
                 updates[key] = value
 
@@ -398,7 +460,9 @@ class SQLiteStorage(StorageBackend):
     ) -> list[tuple[str, float]]:
         # vec0 KNN 查询，再 JOIN memories 过滤条件
         conditions: list[str] = ["m.embedding IS NOT NULL"]
+        conditions.append("(m.expires_at IS NULL OR m.expires_at > ?)")
         params: list[Any] = []
+        params.append(_now_iso())
         if user_id is not None:
             conditions.append("m.user_id = ?")
             params.append(user_id)
@@ -440,6 +504,8 @@ class SQLiteStorage(StorageBackend):
         limit: int,
     ) -> list[tuple[str, float]]:
         conditions = ["embedding IS NOT NULL"]
+        now_str = _now_iso()
+        conditions.append("(expires_at IS NULL OR expires_at > ?)")
         params: list[Any] = []
         if user_id is not None:
             conditions.append("user_id = ?")
@@ -451,7 +517,8 @@ class SQLiteStorage(StorageBackend):
 
         where = " AND ".join(conditions)
         cur = self._execute(
-            f"SELECT id, embedding FROM memories WHERE {where}", tuple(params)
+            f"SELECT id, embedding FROM memories WHERE {where}",
+            (now_str,) + tuple(params),
         )
         rows = cur.fetchall()
 
@@ -474,7 +541,9 @@ class SQLiteStorage(StorageBackend):
     ) -> list[tuple[str, float]]:
         # FTS5 BM25（rank 值为负数，越小越相关）
         join_conditions: list[str] = []
+        join_conditions.append("(m.expires_at IS NULL OR m.expires_at > ?)")
         params: list[Any] = [query]
+        params.append(_now_iso())
         if user_id is not None:
             join_conditions.append("m.user_id = ?")
             params.append(user_id)
@@ -591,6 +660,20 @@ class SQLiteStorage(StorageBackend):
             )
             self._conn.commit()
 
+    def batch_record_access(self, memory_ids: list[str]) -> None:
+        """Record access for multiple memories in a single DB call."""
+        if not memory_ids:
+            return
+        now = _now_iso()
+        placeholders = ",".join("?" * len(memory_ids))
+        self._conn.execute(
+            "UPDATE memories SET last_accessed = ?,"
+            " access_count = access_count + 1"
+            f" WHERE id IN ({placeholders})",
+            [now] + memory_ids,
+        )
+        self._conn.commit()
+
     def get_stats(self, user_id: str | None = None) -> dict[str, object]:
         params: list[Any] = []
         where = ""
@@ -626,16 +709,20 @@ class SQLiteStorage(StorageBackend):
         self, user_id: str | None = None, limit: int = 10_000
     ) -> list[Memory]:
         """获取所有记忆，可按 user_id 过滤。"""
+        now_str = _now_iso()
         try:
             with self._lock:
                 if user_id is not None:
                     cursor = self._execute(
-                        "SELECT * FROM memories WHERE user_id = ? LIMIT ?",
-                        (user_id, limit),
+                        "SELECT * FROM memories WHERE user_id = ? "
+                        "AND (expires_at IS NULL OR expires_at > ?) LIMIT ?",
+                        (user_id, now_str, limit),
                     )
                 else:
                     cursor = self._execute(
-                        "SELECT * FROM memories LIMIT ?", (limit,)
+                        "SELECT * FROM memories "
+                        "WHERE (expires_at IS NULL OR expires_at > ?) LIMIT ?",
+                        (now_str, limit),
                     )
                 return [_memory_from_row(row) for row in cursor.fetchall()]
         except StorageError:
@@ -671,3 +758,211 @@ class SQLiteStorage(StorageBackend):
                 self._conn.commit()
         except Exception as e:
             _logger.warning("Failed to save graph snapshot: %s", e)
+
+    def save_graph_nodes_incremental(self, nodes: list[dict]) -> None:
+        """Incrementally save dirty graph nodes (INSERT OR REPLACE)."""
+        if not nodes:
+            return
+        try:
+            now = _now_iso()
+            with self._lock:
+                self._conn.executemany(
+                    """INSERT OR REPLACE INTO graph_nodes
+                       (id, name, entity_type, aliases, attributes,
+                        first_seen, last_seen, memory_ids, updated_at)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    [
+                        (
+                            n["id"], n["name"], n["entity_type"],
+                            json.dumps(n.get("aliases", [])),
+                            json.dumps(n.get("attributes", {})),
+                            n["first_seen"], n["last_seen"],
+                            json.dumps(n.get("memory_ids", [])),
+                            now,
+                        )
+                        for n in nodes
+                    ],
+                )
+                self._conn.commit()
+        except Exception as e:
+            _logger.warning("Failed to save graph nodes incrementally: %s", e)
+
+    def save_graph_edges_incremental(self, edges: list[dict]) -> None:
+        """Incrementally save dirty graph edges (INSERT OR REPLACE)."""
+        if not edges:
+            return
+        try:
+            now = _now_iso()
+            with self._lock:
+                self._conn.executemany(
+                    """INSERT OR REPLACE INTO graph_edges
+                       (source_id, target_id, relation_type, weight,
+                        timestamp, metadata, updated_at)
+                       VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                    [
+                        (
+                            e["source_id"], e["target_id"],
+                            e["relation_type"], e["weight"],
+                            e["timestamp"],
+                            json.dumps(e.get("metadata", {})),
+                            now,
+                        )
+                        for e in edges
+                    ],
+                )
+                self._conn.commit()
+        except Exception as e:
+            _logger.warning("Failed to save graph edges incrementally: %s", e)
+
+    def load_graph_nodes(self) -> list[dict] | None:
+        """Load all graph nodes from the graph_nodes table."""
+        try:
+            with self._lock:
+                cursor = self._execute(
+                    "SELECT id, name, entity_type, aliases, attributes, "
+                    "first_seen, last_seen, memory_ids FROM graph_nodes",
+                    (),
+                )
+                rows = cursor.fetchall()
+                if not rows:
+                    return None
+                return [
+                    {
+                        "id": r["id"],
+                        "name": r["name"],
+                        "entity_type": r["entity_type"],
+                        "aliases": json.loads(r["aliases"] or "[]"),
+                        "attributes": json.loads(r["attributes"] or "{}"),
+                        "first_seen": r["first_seen"],
+                        "last_seen": r["last_seen"],
+                        "memory_ids": json.loads(r["memory_ids"] or "[]"),
+                    }
+                    for r in rows
+                ]
+        except Exception as e:
+            _logger.warning("Failed to load graph nodes: %s", e)
+            return None
+
+    def load_graph_edges(self) -> list[dict] | None:
+        """Load all graph edges from the graph_edges table."""
+        try:
+            with self._lock:
+                cursor = self._execute(
+                    "SELECT source_id, target_id, relation_type, weight, "
+                    "timestamp, metadata FROM graph_edges",
+                    (),
+                )
+                rows = cursor.fetchall()
+                if not rows:
+                    return None
+                return [
+                    {
+                        "source_id": r["source_id"],
+                        "target_id": r["target_id"],
+                        "relation_type": r["relation_type"],
+                        "weight": r["weight"],
+                        "timestamp": r["timestamp"],
+                        "metadata": json.loads(r["metadata"] or "{}"),
+                    }
+                    for r in rows
+                ]
+        except Exception as e:
+            _logger.warning("Failed to load graph edges: %s", e)
+            return None
+
+    def cleanup_expired(self) -> int:
+        """Delete all memories whose expiration time has passed.
+
+        Returns:
+            Number of memories deleted.
+        """
+        now_str = _now_iso()
+        with self._lock:
+            id_cur = self._execute(
+                "SELECT id FROM memories WHERE expires_at IS NOT NULL AND expires_at <= ?",
+                (now_str,),
+            )
+            ids_to_delete = [r["id"] for r in id_cur.fetchall()]
+
+            if not ids_to_delete:
+                return 0
+
+            placeholders = ",".join("?" for _ in ids_to_delete)
+            self._execute(
+                f"DELETE FROM memories_fts WHERE id IN ({placeholders})",
+                tuple(ids_to_delete),
+            )
+            if self._vec_available:
+                try:
+                    self._execute(
+                        f"""DELETE FROM memories_vec WHERE rowid IN (
+                            SELECT rowid FROM memories WHERE id IN ({placeholders})
+                        )""",
+                        tuple(ids_to_delete),
+                    )
+                except Exception as exc:
+                    _logger.warning("vec0 delete during cleanup failed (%s).", exc)
+            cur = self._execute(
+                f"DELETE FROM memories WHERE id IN ({placeholders})",
+                tuple(ids_to_delete),
+            )
+            self._conn.commit()
+            return cur.rowcount
+
+    def batch_find_similar(
+        self,
+        vectors: list[list[float]],
+        user_id: str | None = None,
+        threshold: float = 0.95,
+    ) -> dict[int, list[Memory]]:
+        """Find similar memories for multiple vectors in a single DB load.
+
+        Loads all active memories for the user once, then computes cosine
+        similarity for each input vector against all loaded memories.
+
+        Args:
+            vectors: List of embedding vectors to check.
+            user_id: Filter memories by user. None = all users.
+            threshold: Minimum cosine similarity to include.
+
+        Returns:
+            Dict mapping input vector index to list of similar Memory objects.
+        """
+        # Load all active memories with embeddings in a single query
+        conditions = ["embedding IS NOT NULL", "is_active = 1"]
+        now_str = _now_iso()
+        conditions.append("(expires_at IS NULL OR expires_at > ?)")
+        params: list[Any] = []
+        if user_id is not None:
+            conditions.append("user_id = ?")
+            params.append(user_id)
+
+        where = " AND ".join(conditions)
+        cur = self._execute(
+            f"SELECT * FROM memories WHERE {where}",
+            tuple(params) + (now_str,),
+        )
+        rows = cur.fetchall()
+        if not rows:
+            return {i: [] for i in range(len(vectors))}
+
+        # Pre-compute memory embeddings as numpy arrays
+        mem_embeddings: list[tuple[Memory, np.ndarray]] = []
+        for row in rows:
+            emb_blob = row["embedding"]
+            if emb_blob:
+                mem = _memory_from_row(row)
+                mem_embeddings.append((mem, _blob_to_embedding(emb_blob)))
+
+        # Compute similarity for each input vector
+        results: dict[int, list[Memory]] = {}
+        for idx, vec in enumerate(vectors):
+            query_vec = np.array(vec, dtype=np.float32)
+            similar: list[Memory] = []
+            for mem, mem_emb in mem_embeddings:
+                score = _cosine_similarity(query_vec, mem_emb)
+                if score >= threshold:
+                    similar.append(mem)
+            results[idx] = similar
+
+        return results

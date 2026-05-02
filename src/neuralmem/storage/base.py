@@ -65,6 +65,9 @@ class StorageBackend(ABC):
     def record_access(self, memory_id: str) -> None: ...
 
     @abstractmethod
+    def batch_record_access(self, memory_ids: list[str]) -> None: ...
+
+    @abstractmethod
     def get_stats(self, user_id: str | None = None) -> dict[str, object]: ...
 
     @abstractmethod
@@ -77,3 +80,21 @@ class StorageBackend(ABC):
 
     @abstractmethod
     def save_graph_snapshot(self, data: dict) -> None: ...
+
+    # --- Incremental graph persistence (optional, default no-op) ---
+
+    def save_graph_nodes_incremental(self, nodes: list[dict]) -> None:
+        """Incrementally save dirty graph nodes. Default: no-op."""
+        pass
+
+    def save_graph_edges_incremental(self, edges: list[dict]) -> None:
+        """Incrementally save dirty graph edges. Default: no-op."""
+        pass
+
+    def load_graph_nodes(self) -> list[dict] | None:
+        """Load all graph nodes from incremental table. Default: None."""
+        return None
+
+    def load_graph_edges(self) -> list[dict] | None:
+        """Load all graph edges from incremental table. Default: None."""
+        return None

@@ -10,14 +10,7 @@ from neuralmem.core.memory import NeuralMem
 @pytest.fixture
 def mem(tmp_path, mock_embedder):
     cfg = NeuralMemConfig(db_path=str(tmp_path / "test.db"))
-    nm = NeuralMem(config=cfg)
-    # 替换 embedder 为 mock（避免下载模型）
-    nm.embedding = mock_embedder
-    nm.retrieval._embedder = mock_embedder
-    nm.retrieval._semantic._embedder = mock_embedder
-    nm.retrieval._temporal._embedder = mock_embedder
-    from neuralmem.extraction.entity_resolver import EntityResolver
-    nm.resolver = EntityResolver(mock_embedder)
+    nm = NeuralMem(config=cfg, embedder=mock_embedder)
     return nm
 
 
@@ -110,11 +103,7 @@ def test_reflect_contains_topic(mem):
 
 def test_context_manager(tmp_path, mock_embedder):
     cfg = NeuralMemConfig(db_path=str(tmp_path / "cm.db"))
-    with NeuralMem(config=cfg) as nm:
-        nm.embedding = mock_embedder
-        nm.retrieval._embedder = mock_embedder
-        nm.retrieval._semantic._embedder = mock_embedder
-        nm.retrieval._temporal._embedder = mock_embedder
+    with NeuralMem(config=cfg, embedder=mock_embedder) as nm:
         memories = nm.remember("context manager test")
         assert isinstance(memories, list)
 

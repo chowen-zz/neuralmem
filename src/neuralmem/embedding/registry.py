@@ -20,6 +20,9 @@ def get_embedder(config: NeuralMemConfig) -> EmbeddingBackend:
         case "huggingface":
             from neuralmem.embedding.huggingface import HuggingFaceEmbedding
             return HuggingFaceEmbedding(config)
+        case "ollama":
+            from neuralmem.embedding.ollama import OllamaEmbeddingBackend
+            return OllamaEmbeddingBackend(config)
         case "azure_openai":
             from neuralmem.embedding.azure_openai import AzureOpenAIEmbedding
             return AzureOpenAIEmbedding(config)

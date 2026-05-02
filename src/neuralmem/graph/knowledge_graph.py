@@ -1,4 +1,4 @@
-"""NetworkX 知识图谱 — 内存级图谱 + SQLite 快照持久化"""
+"""NetworkX 知识图谱 — 内存级图谱 + 增量 SQLite 持久化"""
 from __future__ import annotations
 
 import json
@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 
 import networkx as nx
 
-from neuralmem.core.exceptions import GraphError
+from neuralmem.core.exceptions import GraphError, StorageError
 from neuralmem.core.types import Entity, Relation
 from neuralmem.graph.entity import entity_to_node_attrs, node_attrs_to_entity
 from neuralmem.graph.relation import relation_to_edge_attrs
@@ -21,7 +21,7 @@ _logger = logging.getLogger(__name__)
 
 
 class KnowledgeGraph:
-    """基于 NetworkX DiGraph 的知识图谱，支持线程安全写入与 SQLite 快照持久化"""
+    """基于 NetworkX DiGraph 的知识图谱，支持线程安全写入与增量 SQLite 持久化"""
 
     _SNAPSHOT_KEY = "__graph_snapshot__"
 
@@ -29,6 +29,9 @@ class KnowledgeGraph:
         self._graph: nx.DiGraph = nx.DiGraph()
         self._lock = threading.Lock()
         self._storage = storage
+        # Dirty tracking for incremental persistence
+        self._dirty_nodes: set[str] = set()
+        self._dirty_edges: set[tuple[str, str]] = set()  # (source_id, target_id)
         self._load_snapshot()
 
     # ------------------------------------------------------------------
@@ -50,6 +53,7 @@ class KnowledgeGraph:
                 attrs = entity_to_node_attrs(entity)
                 attrs["memory_ids"] = []
                 self._graph.add_node(entity.id, **attrs)
+            self._dirty_nodes.add(entity.id)
         self._save_snapshot_async()
 
     def get_entity(self, entity_id: str) -> Entity | None:
@@ -104,6 +108,7 @@ class KnowledgeGraph:
                 self._graph[src][tgt].update(attrs)
             else:
                 self._graph.add_edge(src, tgt, **attrs)
+            self._dirty_edges.add((src, tgt))
         self._save_snapshot_async()
 
     # ------------------------------------------------------------------
@@ -184,6 +189,7 @@ class KnowledgeGraph:
                 raise GraphError(f"Entity not found: {entity_id}")
             node = self._graph.nodes[entity_id]
             node["memory_ids"] = list(set(node.get("memory_ids", []) + [memory_id]))
+            self._dirty_nodes.add(entity_id)
         self._save_snapshot_async()
 
     # ------------------------------------------------------------------
@@ -191,7 +197,58 @@ class KnowledgeGraph:
     # ------------------------------------------------------------------
 
     def _load_snapshot(self) -> None:
-        """从 storage 加载快照；不存在则静默忽略"""
+        """从 storage 加载图谱：优先尝试增量表，回退到 JSON 快照"""
+        # 1. Try incremental tables first
+        if self._load_from_tables():
+            _logger.debug(
+                "Graph loaded from incremental tables: %d nodes",
+                self._graph.number_of_nodes(),
+            )
+            return
+        # 2. Fall back to JSON snapshot (migration path)
+        self._load_from_json()
+
+    def _load_from_tables(self) -> bool:
+        """Load graph from graph_nodes / graph_edges tables.
+
+        Returns True if data was found and loaded.
+        """
+        try:
+            nodes = self._storage.load_graph_nodes()
+            if not nodes:
+                return False
+
+            self._graph = nx.DiGraph()
+            for n in nodes:
+                self._graph.add_node(
+                    n["id"],
+                    name=n["name"],
+                    entity_type=n["entity_type"],
+                    aliases=n.get("aliases", []),
+                    attributes=n.get("attributes", {}),
+                    first_seen=n["first_seen"],
+                    last_seen=n["last_seen"],
+                    memory_ids=n.get("memory_ids", []),
+                )
+
+            edges = self._storage.load_graph_edges()
+            if edges:
+                for e in edges:
+                    self._graph.add_edge(
+                        e["source_id"],
+                        e["target_id"],
+                        relation_type=e["relation_type"],
+                        weight=e["weight"],
+                        timestamp=e["timestamp"],
+                        metadata=e.get("metadata", {}),
+                    )
+            return True
+        except Exception as exc:
+            _logger.debug("Failed to load graph from tables (%s)", exc)
+            return False
+
+    def _load_from_json(self) -> None:
+        """Load graph from legacy JSON snapshot (migration path)."""
         try:
             raw = self._storage.load_graph_snapshot()
             if raw is None:
@@ -199,23 +256,108 @@ class KnowledgeGraph:
             data = raw if isinstance(raw, dict) else json.loads(raw)
             self._graph = nx.node_link_graph(data)
             _logger.debug("Graph snapshot loaded: %d nodes", self._graph.number_of_nodes())
-        except Exception as exc:  # noqa: BLE001
+            # Mark all nodes/edges as dirty so next persist populates the tables
+            for nid in self._graph.nodes:
+                self._dirty_nodes.add(nid)
+            for src, tgt in self._graph.edges:
+                self._dirty_edges.add((src, tgt))
+        except (json.JSONDecodeError, TypeError, KeyError, nx.NetworkXError) as exc:
             _logger.debug("No graph snapshot loaded (%s)", exc)
 
     def _save_snapshot_async(self) -> None:
-        """后台持久化图谱快照（在调用线程持锁序列化，后台线程仅负责 I/O，消除锁竞争）"""
-        try:
-            with self._lock:
-                data = nx.node_link_data(self._graph)
-        except Exception:  # noqa: BLE001
-            return
+        """后台持久化图谱（增量表 + JSON 快照向后兼容）。
+
+        在调用线程持锁序列化脏数据，后台线程仅负责 I/O，消除锁竞争。
+        """
+        # Snapshot dirty items and clear the sets under lock
+        with self._lock:
+            if not self._dirty_nodes and not self._dirty_edges:
+                # Nothing changed — still save full JSON for backward compat
+                try:
+                    data = nx.node_link_data(self._graph)
+                except (TypeError, ValueError):
+                    return
+
+                def _worker_json() -> None:
+                    try:
+                        self._storage.save_graph_snapshot(data)
+                        _logger.debug(
+                            "Graph snapshot saved (no incremental changes): %d nodes",
+                            len(data.get("nodes", [])),
+                        )
+                    except (StorageError, OSError) as exc:
+                        _logger.debug("Graph snapshot save failed: %s", exc)
+
+                threading.Thread(target=_worker_json, daemon=True).start()
+                return
+
+            # Collect dirty node data
+            dirty_node_ids = list(self._dirty_nodes)
+            dirty_edge_keys = list(self._dirty_edges)
+            dirty_nodes_data: list[dict] = []
+            for nid in dirty_node_ids:
+                if self._graph.has_node(nid):
+                    attrs = dict(self._graph.nodes[nid])
+                    dirty_nodes_data.append({
+                        "id": nid,
+                        "name": attrs.get("name", ""),
+                        "entity_type": attrs.get("entity_type", "unknown"),
+                        "aliases": attrs.get("aliases", []),
+                        "attributes": attrs.get("attributes", {}),
+                        "first_seen": attrs.get("first_seen", ""),
+                        "last_seen": attrs.get("last_seen", ""),
+                        "memory_ids": attrs.get("memory_ids", []),
+                    })
+
+            # Collect dirty edge data
+            dirty_edges_data: list[dict] = []
+            for src, tgt in dirty_edge_keys:
+                if self._graph.has_edge(src, tgt):
+                    attrs = dict(self._graph[src][tgt])
+                    dirty_edges_data.append({
+                        "source_id": src,
+                        "target_id": tgt,
+                        "relation_type": attrs.get("relation_type", ""),
+                        "weight": attrs.get("weight", 1.0),
+                        "timestamp": attrs.get("timestamp", ""),
+                        "metadata": attrs.get("metadata", {}),
+                    })
+
+            # Also snapshot full JSON for backward compatibility
+            try:
+                full_data = nx.node_link_data(self._graph)
+            except (TypeError, ValueError):
+                full_data = None
+
+            # Clear dirty sets
+            self._dirty_nodes.clear()
+            self._dirty_edges.clear()
 
         def _worker() -> None:
             try:
-                self._storage.save_graph_snapshot(data)
-                _logger.debug("Graph snapshot saved: %d nodes", len(data.get("nodes", [])))
-            except Exception as exc:  # noqa: BLE001
-                _logger.debug("Graph snapshot save failed: %s", exc)
+                # Save incremental changes
+                if dirty_nodes_data:
+                    self._storage.save_graph_nodes_incremental(dirty_nodes_data)
+                if dirty_edges_data:
+                    self._storage.save_graph_edges_incremental(dirty_edges_data)
+                _logger.debug(
+                    "Graph incremental save: %d nodes, %d edges",
+                    len(dirty_nodes_data),
+                    len(dirty_edges_data),
+                )
+            except (StorageError, OSError) as exc:
+                _logger.debug("Graph incremental save failed: %s", exc)
+
+            # Also save full JSON snapshot for backward compatibility
+            if full_data is not None:
+                try:
+                    self._storage.save_graph_snapshot(full_data)
+                    _logger.debug(
+                        "Graph snapshot saved: %d nodes",
+                        len(full_data.get("nodes", [])),
+                    )
+                except (StorageError, OSError) as exc:
+                    _logger.debug("Graph snapshot save failed: %s", exc)
 
         threading.Thread(target=_worker, daemon=True).start()
 

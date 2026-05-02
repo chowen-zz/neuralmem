@@ -6,11 +6,12 @@ import io
 import json
 import logging
 from collections.abc import Callable
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from neuralmem.core.config import NeuralMemConfig
 from neuralmem.core.exceptions import NeuralMemError
+from neuralmem.core.metrics import MetricsCollector
 from neuralmem.core.types import (
     ExportFormat,
     Memory,
@@ -49,6 +50,7 @@ class NeuralMem:
         self,
         db_path: str = "~/.neuralmem/memory.db",
         config: NeuralMemConfig | None = None,
+        embedder=None,  # Optional: any object matching EmbedderProtocol (encode method)
     ):
         self.config = config or NeuralMemConfig(db_path=db_path)
         # 确保数据库目录存在
@@ -56,7 +58,7 @@ class NeuralMem:
 
         # 初始化子系统
         self.storage = SQLiteStorage(self.config)
-        self.embedding = get_embedder(self.config)
+        self.embedding = embedder or get_embedder(self.config)
         self.graph = KnowledgeGraph(self.storage)
 
         # 提取器：通过 registry 动态选择（config.llm_extractor 控制）
@@ -72,6 +74,11 @@ class NeuralMem:
         self.consolidator = MemoryConsolidator(storage=self.storage, embedder=self.embedding)
         self.resolver = EntityResolver(self.embedding)
 
+        # Metrics collector
+        self.metrics = MetricsCollector(
+            enabled=getattr(self.config, "enable_metrics", False),
+        )
+
     # ==================== 核心 API ====================
 
     def remember(
@@ -84,6 +91,8 @@ class NeuralMem:
         memory_type: MemoryType | None = None,
         tags: list[str] | None = None,
         importance: float | None = None,
+        expires_at: datetime | None = None,
+        expires_in: timedelta | None = None,
     ) -> list[Memory]:
         """
         存储记忆。自动执行：提取实体 → 生成 Embedding → 去重检查 → 持久化 → 更新图谱
@@ -91,16 +100,57 @@ class NeuralMem:
         Returns:
             提取并存储的记忆列表（一段内容可提取多条记忆）
         """
+        self.metrics.record_counter("neuralmem.remember.calls")
+        with self.metrics.timer("neuralmem.remember"):
+            return self._remember_impl(
+                content,
+                user_id=user_id,
+                agent_id=agent_id,
+                session_id=session_id,
+                memory_type=memory_type,
+                tags=tags,
+                importance=importance,
+                expires_at=expires_at,
+                expires_in=expires_in,
+            )
+
+    def _remember_impl(
+        self,
+        content: str,
+        *,
+        user_id: str | None = None,
+        agent_id: str | None = None,
+        session_id: str | None = None,
+        memory_type: MemoryType | None = None,
+        tags: list[str] | None = None,
+        importance: float | None = None,
+        expires_at: datetime | None = None,
+        expires_in: timedelta | None = None,
+    ) -> list[Memory]:
+        # Resolve expiration: expires_at takes precedence over expires_in
+        resolved_expires_at = expires_at
+        if resolved_expires_at is None and expires_in is not None:
+            from datetime import timezone
+            resolved_expires_at = datetime.now(timezone.utc) + expires_in
+
         try:
+            existing_entities = self.graph.get_entities(user_id=user_id)
+
             extracted = self.extractor.extract(
                 content,
                 memory_type=memory_type,
-                existing_entities=self.graph.get_entities(user_id=user_id),
+                existing_entities=existing_entities,
             )
 
+            if not extracted:
+                return []
+
+            # Batch encode all extracted contents
+            all_contents = [item.content for item in extracted]
+            all_vectors = self.embedding.encode(all_contents)
+
             memories: list[Memory] = []
-            for item in extracted:
-                vector = self.embedding.encode_one(item.content)
+            for item, vector in zip(extracted, all_vectors):
 
                 # 去重 + 冲突检测
                 high_th = self.config.conflict_threshold_high
@@ -123,7 +173,7 @@ class NeuralMem:
                 # 实体消歧（在构建 Memory 之前）
                 resolved_entities = self.resolver.resolve(
                     item.entities,
-                    self.graph.get_entities(user_id=user_id),
+                    existing_entities,
                 )
 
                 memory = Memory(
@@ -137,6 +187,7 @@ class NeuralMem:
                     importance=importance or item.importance,
                     entity_ids=tuple(e.id for e in resolved_entities),
                     embedding=vector,
+                    expires_at=resolved_expires_at,
                 )
 
                 # 标记被取代的旧记忆
@@ -189,6 +240,31 @@ class NeuralMem:
         Returns:
             按相关性排序的搜索结果列表
         """
+        self.metrics.record_counter("neuralmem.recall.calls")
+        with self.metrics.timer("neuralmem.recall"):
+            return self._recall_impl(
+                query,
+                user_id=user_id,
+                agent_id=agent_id,
+                memory_types=memory_types,
+                tags=tags,
+                time_range=time_range,
+                limit=limit,
+                min_score=min_score,
+            )
+
+    def _recall_impl(
+        self,
+        query: str,
+        *,
+        user_id: str | None = None,
+        agent_id: str | None = None,
+        memory_types: list[MemoryType] | None = None,
+        tags: list[str] | None = None,
+        time_range: tuple[datetime, datetime] | None = None,
+        limit: int = 10,
+        min_score: float = 0.3,
+    ) -> list[SearchResult]:
         search_query = SearchQuery(
             query=query,
             user_id=user_id,
@@ -205,10 +281,13 @@ class NeuralMem:
         # Filter superseded memories
         results = [r for r in results if r.memory.is_active]
 
-        # Record access and optionally reinforce importance
-        for result in results:
-            self.storage.record_access(result.memory.id)
-            if self.config.enable_importance_reinforcement:
+        # Batch record access for all results at once
+        if results:
+            self.storage.batch_record_access([r.memory.id for r in results])
+
+        # Optionally reinforce importance
+        if self.config.enable_importance_reinforcement:
+            for result in results:
                 boosted = min(1.0, result.memory.importance + self.config.reinforcement_boost)
                 if boosted > result.memory.importance:
                     self.storage.update_memory(result.memory.id, importance=boosted)
@@ -414,6 +493,159 @@ class NeuralMem:
             ])
         return buf.getvalue()
 
+    def import_memories(
+        self,
+        data: str,
+        *,
+        format: str = "json",
+        user_id: str | None = None,
+        skip_duplicates: bool = True,
+    ) -> int:
+        """
+        Import memories from exported data.
+
+        Args:
+            data: The exported data string
+            format: 'json', 'markdown', or 'csv'
+            user_id: Override user_id for imported memories
+            skip_duplicates: If True, skip memories with similar content already stored
+
+        Returns:
+            Number of memories imported
+        """
+        fmt = format.lower()
+
+        if fmt == ExportFormat.JSON:
+            items = self._import_json(data)
+        elif fmt == ExportFormat.MARKDOWN:
+            items = self._import_markdown(data)
+        elif fmt == ExportFormat.CSV:
+            items = self._import_csv(data)
+        else:
+            raise NeuralMemError(
+                f"Unsupported import format: {format!r}. "
+                "Use json, markdown, or csv."
+            )
+
+        imported = 0
+        for raw in items:
+            # Override user_id if specified
+            if user_id is not None:
+                raw["user_id"] = user_id
+
+            # Reconstruct Memory object with minimal fields
+            content = raw.get("content", "")
+            if not content:
+                continue
+
+            memory_type = MemoryType(raw.get("memory_type", "semantic"))
+            scope = MemoryScope(raw.get("scope", "user"))
+            raw_user_id = raw.get("user_id")
+            raw_agent_id = raw.get("agent_id")
+            tags = tuple(raw.get("tags", []))
+            importance = float(raw.get("importance", 0.5))
+
+            # Duplicate check via content similarity
+            if skip_duplicates:
+                existing = self.storage.list_memories(user_id=raw_user_id)
+                is_dup = False
+                for m in existing:
+                    if m.content.strip().lower() == content.strip().lower():
+                        _logger.debug("Skipping duplicate import: %s", content[:50])
+                        is_dup = True
+                        break
+                if is_dup:
+                    continue
+
+            # Build embedding for the imported memory
+            vectors = self.embedding.encode([content])
+            vector = vectors[0]
+
+            memory = Memory(
+                content=content,
+                memory_type=memory_type,
+                scope=scope,
+                user_id=raw_user_id,
+                agent_id=raw_agent_id,
+                tags=tags,
+                importance=importance,
+                embedding=vector,
+            )
+
+            self.storage.save_memory(memory)
+            imported += 1
+
+        return imported
+
+    def _import_json(self, data: str) -> list[dict[str, object]]:
+        """Parse JSON export format back to list of raw dicts."""
+        try:
+            items = json.loads(data)
+        except json.JSONDecodeError as e:
+            raise NeuralMemError(f"Invalid JSON data: {e}") from e
+
+        if not isinstance(items, list):
+            raise NeuralMemError("JSON import expects an array of memory objects")
+
+        return items
+
+    def _import_markdown(self, data: str) -> list[dict[str, object]]:
+        """Parse Markdown export format back to list of raw dicts."""
+        items: list[dict[str, object]] = []
+        current: dict[str, object] | None = None
+
+        for line in data.splitlines():
+            line = line.strip()
+
+            # Section header: ## [type] content
+            if line.startswith("## ["):
+                if current is not None:
+                    items.append(current)
+                # Parse "## [semantic] content..."
+                bracket_end = line.index("]")
+                memory_type = line[4:bracket_end]
+                content = line[bracket_end + 1:].strip()
+                current = {"memory_type": memory_type, "content": content, "tags": []}
+            elif current is not None and line.startswith("- **"):
+                # Parse metadata lines like "- **Importance**: 0.80"
+                try:
+                    colon_idx = line.index(":")
+                    key = line[4:colon_idx].strip().strip("*").strip().lower()
+                    value = line[colon_idx + 1:].strip().strip("`").strip()
+                    if key == "importance":
+                        current["importance"] = float(value)
+                    elif key == "user":
+                        current["user_id"] = value
+                    elif key == "tags":
+                        current["tags"] = [t.strip() for t in value.split(",")]
+                    elif key == "id":
+                        current["id"] = value
+                except (ValueError, IndexError):
+                    pass
+
+        if current is not None:
+            items.append(current)
+
+        return items
+
+    def _import_csv(self, data: str) -> list[dict[str, object]]:
+        """Parse CSV export format back to list of raw dicts."""
+        reader = csv.DictReader(io.StringIO(data))
+        items: list[dict[str, object]] = []
+        for row in reader:
+            raw: dict[str, object] = {
+                "content": row.get("content", ""),
+                "memory_type": row.get("memory_type", "semantic"),
+                "scope": row.get("scope", "user"),
+                "user_id": row.get("user_id") or None,
+                "agent_id": row.get("agent_id") or None,
+                "importance": float(row.get("importance", 0.5)),
+            }
+            tags_str = row.get("tags", "")
+            raw["tags"] = [t.strip() for t in tags_str.split(";") if t.strip()]
+            items.append(raw)
+        return items
+
     def forget_batch(
         self,
         memory_ids: list[str] | None = None,
@@ -483,6 +715,14 @@ class NeuralMem:
             "forgotten": self.decay.remove_forgotten(user_id=user_id),
             "merged": self.consolidator.merge_similar(user_id=user_id),
         }
+
+    def cleanup_expired(self) -> int:
+        """Remove all memories whose expiration time has passed.
+
+        Returns:
+            Number of expired memories deleted.
+        """
+        return self.storage.cleanup_expired()
 
     def resolve_conflict(
         self,

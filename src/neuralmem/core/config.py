@@ -15,6 +15,10 @@ class NeuralMemConfig(BaseModel):
         default="~/.neuralmem/memory.db",
         description="SQLite 数据库路径",
     )
+    pg_dsn: str = Field(
+        default="postgresql://localhost:5432/neuralmem",
+        description="PostgreSQL DSN（用于 PgVectorStorage 后端）",
+    )
 
     # Embedding 配置
     embedding_model: str = Field(
@@ -68,6 +72,12 @@ class NeuralMemConfig(BaseModel):
         description="是否启用 LLM 辅助提取（需要 Ollama 运行中）",
     )
 
+    # Ollama Embedding
+    ollama_embedding_model: str = Field(
+        default="nomic-embed-text",
+        description="Ollama embedding model",
+    )
+
     # OpenAI（可选）
     openai_api_key: str | None = Field(default=None, repr=False)
     openai_embedding_model: str = Field(default="text-embedding-3-small")
@@ -90,6 +100,12 @@ class NeuralMemConfig(BaseModel):
     azure_api_key: str | None = Field(default=None, repr=False)
     azure_deployment: str = Field(default="text-embedding-3-small")
     azure_api_version: str = Field(default="2024-02-01")
+
+    # Metrics / Observability
+    enable_metrics: bool = Field(
+        default=False,
+        description="是否启用结构化指标收集（MetricsCollector）",
+    )
 
     # LLM extractor selection (replaces enable_llm_extraction bool)
     llm_extractor: str = Field(
@@ -116,6 +132,7 @@ class NeuralMemConfig(BaseModel):
         """从环境变量构建配置（NEURALMEM_ 前缀）"""
         return cls(
             db_path=os.getenv("NEURALMEM_DB_PATH", "~/.neuralmem/memory.db"),
+            pg_dsn=os.getenv("NEURALMEM_PG_DSN", "postgresql://localhost:5432/neuralmem"),
             embedding_model=os.getenv("NEURALMEM_EMBEDDING_MODEL", "all-MiniLM-L6-v2"),
             embedding_provider=os.getenv("NEURALMEM_EMBEDDING_PROVIDER", "local"),
             conflict_threshold_low=float(os.getenv("NEURALMEM_CONFLICT_LOW", "0.75")),
@@ -127,6 +144,9 @@ class NeuralMemConfig(BaseModel):
             enable_reranker=os.getenv("NEURALMEM_ENABLE_RERANKER", "false").lower() == "true",
             ollama_url=os.getenv("NEURALMEM_OLLAMA_URL", "http://localhost:11434"),
             ollama_model=os.getenv("NEURALMEM_OLLAMA_MODEL", "llama3.2:3b"),
+            ollama_embedding_model=os.getenv(
+                "NEURALMEM_OLLAMA_EMBEDDING_MODEL", "nomic-embed-text"
+            ),
             enable_llm_extraction=os.getenv("NEURALMEM_LLM_EXTRACTION", "false").lower() == "true",
             openai_api_key=os.getenv("NEURALMEM_OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY"),
             cohere_api_key=os.getenv("NEURALMEM_COHERE_API_KEY"),

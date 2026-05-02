@@ -11,6 +11,7 @@ import logging
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
+from neuralmem.core.exceptions import StorageError
 from neuralmem.core.types import Memory, SessionLayer
 
 if TYPE_CHECKING:
@@ -74,7 +75,7 @@ class SessionContext:
     ) -> None:
         try:
             self._compress_and_promote()
-        except Exception:
+        except (StorageError, OSError):
             _logger.exception("Error during session end (conversation_id=%s)", self.conversation_id)
         finally:
             _logger.debug(
@@ -239,7 +240,7 @@ class SessionContext:
             row = cur.fetchone()
             if row and row[0]:
                 return row[0]
-        except Exception:
+        except StorageError:
             pass
         return SessionLayer.LONG_TERM.value
 

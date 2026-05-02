@@ -28,8 +28,7 @@ def _make_neural_mem(config, mock_embedder, tmp_path):
         enable_importance_reinforcement=True,
         reinforcement_boost=0.05,
     )
-    mem = NeuralMem(config=cfg)
-    mem.embedding = mock_embedder  # inject mock embedder
+    mem = NeuralMem(config=cfg, embedder=mock_embedder)
     return mem
 
 
@@ -129,8 +128,7 @@ class TestConflictResolution:
         storage.save_memory(m1)
         storage.update_memory(m1.id, is_active=False, superseded_by="fake-id")
 
-        mem = NeuralMem(config=cfg)
-        mem.embedding = mock_embedder
+        mem = NeuralMem(config=cfg, embedder=mock_embedder)
         result = mem.resolve_conflict(m1.id, action="reactivate")
         assert result is True
 
@@ -154,8 +152,7 @@ class TestConflictResolution:
         )
         storage.save_memory(m1)
 
-        mem = NeuralMem(config=cfg)
-        mem.embedding = mock_embedder
+        mem = NeuralMem(config=cfg, embedder=mock_embedder)
         result = mem.resolve_conflict(m1.id, action="delete")
         assert result is True
 
@@ -166,8 +163,7 @@ class TestConflictResolution:
         """resolve_conflict returns False for nonexistent memory."""
         db_path = str(tmp_path / "test.db")
         cfg = NeuralMemConfig(db_path=db_path, embedding_dim=4)
-        mem = NeuralMem(config=cfg)
-        mem.embedding = mock_embedder
+        mem = NeuralMem(config=cfg, embedder=mock_embedder)
         result = mem.resolve_conflict("nonexistent-id", action="reactivate")
         assert result is False
 
@@ -311,8 +307,7 @@ class TestImportanceReinforcement:
         storage.save_memory(m)
 
         # Create NeuralMem and inject mock embedder
-        mem = NeuralMem(config=cfg)
-        mem.embedding = mock_embedder
+        mem = NeuralMem(config=cfg, embedder=mock_embedder)
 
         # Recall will hit semantic strategy; verify it works without error
         mem.recall("User likes Java", user_id="test-user")
@@ -339,8 +334,7 @@ class TestImportanceReinforcement:
         )
         storage.save_memory(m)
 
-        mem = NeuralMem(config=cfg)
-        mem.embedding = mock_embedder
+        mem = NeuralMem(config=cfg, embedder=mock_embedder)
 
         mem.recall("User likes Java", user_id="test-user")
         # With reinforcement disabled, importance should remain unchanged

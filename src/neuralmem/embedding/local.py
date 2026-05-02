@@ -1,6 +1,7 @@
 """FastEmbed 本地 ONNX Embedding 实现"""
 from __future__ import annotations
 
+import functools
 import logging
 import threading
 from collections.abc import Sequence
@@ -78,6 +79,7 @@ class LocalEmbedding(EmbeddingBackend):
         except Exception as e:
             raise EmbeddingError(f"Encoding failed: {e}") from e
 
+    @functools.lru_cache(maxsize=512)
     def encode_one(self, text: str) -> list[float]:
         """编码单条文本为浮点向量"""
         return self.encode([text])[0]

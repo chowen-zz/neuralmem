@@ -71,7 +71,7 @@ def _make_memory(content: str, importance: float = 0.5, created_minutes_ago: int
 
 
 def test_consolidator_merges_similar():
-    """两条高相似记忆应被合并"""
+    """两条高相似记忆应被合并（标记为 superseded，而非删除）"""
     m1 = _make_memory("用户喜欢 Python", importance=0.6, created_minutes_ago=10)
     m2 = _make_memory("用户偏好 Python 编程", importance=0.5, created_minutes_ago=5)
 
@@ -81,7 +81,6 @@ def test_consolidator_merges_similar():
 
     storage = MagicMock()
     storage.list_memories.return_value = [m1, m2]
-    storage.delete_memories.return_value = 1
 
     embedder = MagicMock()
     embedder.encode_one.side_effect = lambda text: vec1 if "喜欢" in text else vec2
@@ -89,8 +88,16 @@ def test_consolidator_merges_similar():
     c = MemoryConsolidator(storage=storage, embedder=embedder, merge_threshold=0.9)
     result = c.merge_similar()
     assert result == 1
-    storage.update_memory.assert_called_once()
-    storage.delete_memories.assert_called_once_with(memory_id=m2.id)
+    # Should call update_memory twice: once for canonical, once to supersede m2
+    assert storage.update_memory.call_count == 2
+    # First call updates canonical (m1), second marks m2 as superseded
+    calls = storage.update_memory.call_args_list
+    # Second call should mark m2 as superseded
+    assert calls[1][0][0] == m2.id
+    assert calls[1][1]["is_active"] is False
+    assert calls[1][1]["superseded_by"] == m1.id
+    # Should NOT delete anything
+    storage.delete_memories.assert_not_called()
 
 
 def test_consolidator_skips_dissimilar():
@@ -131,6 +138,11 @@ def test_consolidator_uses_existing_embedding():
     # Should NOT call encode_one since embeddings exist
     embedder.encode_one.assert_not_called()
     assert result == 1
+    # m2 should be superseded, not deleted
+    calls = storage.update_memory.call_args_list
+    assert calls[1][0][0] == m2.id
+    assert calls[1][1]["is_active"] is False
+    assert calls[1][1]["superseded_by"] == m1.id
 
 
 def test_cosine_similarity_basic():

@@ -1,12 +1,47 @@
 """NeuralMem 核心数据模型 — frozen=True 确保跨模块类型契约稳定"""
 from __future__ import annotations
 
+import os
+import time
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any
-from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field
+
+# --- ULID generator (time-ordered, no external dependency) ---
+_ULID_ENCODING = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
+
+
+def _generate_ulid() -> str:
+    """Generate a ULID: 48-bit timestamp + 80-bit randomness, Crockford base32.
+
+    26 characters, lexicographically sortable by creation time.
+    """
+    # 48-bit timestamp in milliseconds
+    ts = int(time.time() * 1000)
+    # 80-bit randomness (10 bytes)
+    rand_int = int.from_bytes(os.urandom(10), "big")
+
+    # Encode timestamp (10 chars)
+    result = ""
+    t = ts
+    for _ in range(10):
+        result = _ULID_ENCODING[t & 0x1F] + result
+        t >>= 5
+
+    # Encode randomness (16 chars)
+    r = rand_int
+    for _ in range(16):
+        result += _ULID_ENCODING[r & 0x1F]
+        r >>= 5
+
+    return result
+
+
+def _generate_short_ulid() -> str:
+    """Generate a 12-char prefix of a ULID (time-ordered, for entity IDs)."""
+    return _generate_ulid()[:12]
 
 
 class MemoryType(str, Enum):
@@ -43,7 +78,7 @@ class Entity(BaseModel):
     """知识图谱实体"""
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    id: str = Field(default_factory=lambda: uuid4().hex[:12])
+    id: str = Field(default_factory=_generate_short_ulid)
     name: str
     entity_type: str = "unknown"
     aliases: tuple[str, ...] = Field(default_factory=tuple)
@@ -68,7 +103,7 @@ class Memory(BaseModel):
     """一条记忆"""
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    id: str = Field(default_factory=lambda: uuid4().hex)
+    id: str = Field(default_factory=_generate_ulid)
     content: str
     memory_type: MemoryType = MemoryType.SEMANTIC
     scope: MemoryScope = MemoryScope.USER
@@ -103,6 +138,11 @@ class Memory(BaseModel):
 
     # 向量（内部使用，不序列化到 API）
     embedding: list[float] | None = Field(default=None, exclude=True, frozen=False)
+
+    # TTL / 过期时间
+    expires_at: datetime | None = Field(
+        default=None, description="记忆过期时间（UTC），None 表示永不过期"
+    )
 
 
 class SearchResult(BaseModel):

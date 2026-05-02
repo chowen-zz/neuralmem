@@ -49,6 +49,14 @@ class RetrievalEngine:
         self._keyword = KeywordStrategy(storage)
         self._graph_strategy = GraphStrategy(graph)
         self._temporal = TemporalStrategy(storage, embedder)
+        self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=4)
+
+    def close(self) -> None:
+        """Shut down the internal thread pool executor."""
+        self._executor.shutdown(wait=False)
+
+    def __del__(self) -> None:
+        self.close()
 
     def search(self, query: SearchQuery) -> list[SearchResult]:
         """执行四策略并行检索，返回按相关性排序的结果列表"""
@@ -87,20 +95,19 @@ class RetrievalEngine:
                 limit=limit_per_strategy,
             )
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
-            futures = {
-                "semantic": executor.submit(run_semantic),
-                "keyword": executor.submit(run_keyword),
-                "graph": executor.submit(run_graph),
-                "temporal": executor.submit(run_temporal),
-            }
-            for name, future in futures.items():
-                try:
-                    results = future.result(timeout=10.0)
-                    if results:
-                        strategy_results[name] = results
-                except Exception as e:
-                    _logger.warning("Strategy %s failed: %s", name, e)
+        futures = {
+            "semantic": self._executor.submit(run_semantic),
+            "keyword": self._executor.submit(run_keyword),
+            "graph": self._executor.submit(run_graph),
+            "temporal": self._executor.submit(run_temporal),
+        }
+        for name, future in futures.items():
+            try:
+                results = future.result(timeout=10.0)
+                if results:
+                    strategy_results[name] = results
+            except Exception as e:
+                _logger.warning("Strategy %s failed: %s", name, e)
 
         if not strategy_results:
             return []

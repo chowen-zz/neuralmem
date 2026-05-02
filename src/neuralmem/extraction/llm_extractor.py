@@ -23,11 +23,15 @@ class LLMExtractor(BaseLLMExtractor):
             import httpx
             resp = httpx.get(f"{self._config.ollama_url}/api/tags", timeout=2.0)
             self._available = resp.status_code == 200
-        except Exception:
+        except ImportError:
+            self._available = False
+            _logger.info("httpx not installed, using rule extractor.")
+        except Exception as exc:
             self._available = False
             _logger.info(
-                "Ollama not available at %s, using rule extractor.",
+                "Ollama not available at %s (%s), using rule extractor.",
                 self._config.ollama_url,
+                type(exc).__name__,
             )
         return self._available
 
