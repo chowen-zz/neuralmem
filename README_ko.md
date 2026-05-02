@@ -1,6 +1,6 @@
 # NeuralMem
 
-[简体中文](README.md) | [English](README_en.md) | [日本語](README_ja.md) | **한국어** | [Tiếng Việt](README_vi.md) | [繁體中文](README_zh-TW.md)
+[简体中文](README_zh.md) | [English](README.md) | [日本語](README_ja.md) | **한국어** | [Tiếng Việt](README_vi.md) | [繁體中文](README_zh-TW.md)
 
 > **인프라로서의 메모리** — 로컬 우선, MCP 네이티브, 엔터프라이즈 지원
 

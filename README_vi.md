@@ -1,6 +1,6 @@
 # NeuralMem
 
-[简体中文](README.md) | [English](README_en.md) | [日本語](README_ja.md) | [한국어](README_ko.md) | **Tiếng Việt** | [繁體中文](README_zh-TW.md)
+[简体中文](README_zh.md) | [English](README.md) | [日本語](README_ja.md) | [한국어](README_ko.md) | **Tiếng Việt** | [繁體中文](README_zh-TW.md)
 
 > **Bộ nhớ như Hạ tầng — Ưu tiên cục bộ, tích hợp MCP nguyên bản, sẵn sàng cho doanh nghiệp**
 

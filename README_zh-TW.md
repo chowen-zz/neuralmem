@@ -1,6 +1,6 @@
 # NeuralMem
 
-[简体中文](README.md) | [English](README_en.md) | [日本語](README_ja.md) | [한국어](README_ko.md) | [Tiếng Việt](README_vi.md) | **繁體中文**
+[简体中文](README_zh.md) | [English](README.md) | [日本語](README_ja.md) | [한국어](README_ko.md) | [Tiếng Việt](README_vi.md) | **繁體中文**
 
 > **Memory as Infrastructure** — Local-first, MCP-native, Enterprise-ready
 

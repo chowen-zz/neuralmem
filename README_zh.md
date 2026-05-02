@@ -1,0 +1,288 @@
+# NeuralMem
+
+**简体中文** | [English](README.md) | [日本語](README_ja.md) | [한국어](README_ko.md) | [Tiếng Việt](README_vi.md) | [繁體中文](README_zh-TW.md)
+
+> **Memory as Infrastructure** — Local-first, MCP-native, Enterprise-ready
+
+Agent 记忆领域的 SQLite —— 零依赖安装，本地优先，企业可扩展。
+
+[![Tests](https://img.shields.io/badge/tests-425%20passing-brightgreen)](https://github.com/chowen-zz/neuralmem)
+[![Coverage](https://img.shields.io/badge/coverage-83%25-green)](https://github.com/chowen-zz/neuralmem)
+[![Python](https://img.shields.io/badge/python-3.10%2B-blue)](https://pypi.org/project/neuralmem/)
+[![npm](https://img.shields.io/npm/v/neuralmem)](https://www.npmjs.com/package/neuralmem)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
+
+## 为什么需要 NeuralMem？
+
+即使拥有 200K token 的上下文窗口，在生产环境中塞入全部对话历史也不可行——成本和延迟都无法接受。NeuralMem 提供了更好的解决方案：
+
+- **持久记忆**：Agent 跨会话记住用户偏好、项目背景、历史决策
+- **智能检索**：四策略并行（语义 + BM25 + 图谱 + 时序）+ RRF 融合，找到最相关的记忆
+- **零依赖**：`pip install neuralmem` 即用，无需 Docker、无需 API Key
+- **MCP 原生**：一等公民支持 Model Context Protocol，30 秒接入 Claude Desktop
+
+## 快速开始
+
+```bash
+pip install neuralmem
+```
+
+```python
+from neuralmem import NeuralMem
+
+mem = NeuralMem()
+
+# 存储记忆
+mem.remember("用户偏好 TypeScript 写前端，讨厌 JavaScript")
+
+# 检索记忆（四策略并行 + RRF 融合）
+results = mem.recall("用户的技术偏好是什么？")
+for r in results:
+    print(f"[{r.score:.2f}] {r.memory.content}")
+```
+
+## Node.js / npm 接入
+
+```bash
+npm install neuralmem
+```
+
+```typescript
+import { NeuralMem } from "neuralmem";
+
+const mem = new NeuralMem();
+await mem.connect();
+
+// 存储记忆
+await mem.remember("用户偏好 TypeScript", { tags: ["偏好"] });
+
+// 检索记忆
+const results = await mem.recall("TypeScript");
+for (const r of results) {
+  console.log(`[${r.score.toFixed(2)}] ${r.memory.content}`);
+}
+
+await mem.disconnect();
+```
+
+> 需要本地安装 Python 3.10+ 和 neuralmem（`pip install neuralmem`）。npm 包通过 MCP stdio 协议自动启动 Python 后端。
+
+详见 [`npm/README.md`](npm/README.md)。
+
+## MCP 接入（支持 10+ 主流 AI 客户端）
+
+NeuralMem 实现标准 MCP 协议，一行配置即可接入：
+
+```json
+{
+  "mcpServers": {
+    "neuralmem": {
+      "command": "neuralmem",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+| 客户端 | 配置文件位置 |
+|--------|-------------|
+| **Claude Desktop** | `~/Library/Application Support/Claude/claude_desktop_config.json` |
+| **Claude Code** | `claude mcp add neuralmem -- neuralmem mcp` |
+| **Cursor** | `.cursor/mcp.json`（项目级）或 `~/.cursor/mcp.json`（全局） |
+| **Windsurf** | `~/.codeium/windsurf/mcp_config.json` |
+| **Cline (VS Code)** | `~/.cline/mcp_settings.json` |
+| **Continue** | `~/.continue/config.json` → `mcpServers` |
+| **Zed** | `~/.config/zed/settings.json` → `mcp.servers` |
+| **ChatBox / Cherry Studio / Trae** | Settings → MCP Servers |
+
+> 完整配置示例（含 HTTP 模式、环境变量、故障排查）：[docs/mcp-integrations.md](docs/mcp-integrations.md)
+
+接入后可用 10 个工具：`remember`、`recall`、`reflect`、`forget`、`consolidate`、`remember_batch`、`forget_batch`、`export_memories`、`resolve_conflict`、`recall_with_explanation`。
+
+## 核心特性
+
+### 四策略并行检索
+```
+语义搜索 → 捕获语义相近的记忆
+BM25 关键词 → 捕获精确术语匹配
+图谱遍历 → 通过实体关系找关联记忆
+时序加权 → 近期记忆权重更高
+         ↓
+    RRF 融合（Reciprocal Rank Fusion）
+         ↓
+  Cross-Encoder 重排序（可选）
+```
+
+### Ebbinghaus 遗忘曲线
+```python
+# 定期调用 consolidate 应用遗忘曲线
+stats = mem.consolidate()
+# {"decayed": 12, "forgotten": 3, "merged": 2}
+```
+
+### 知识图谱
+实体和关系自动提取并存储到 NetworkX 图谱，支持多跳推理：
+```python
+report = mem.reflect("Alice 的技术栈")
+# 自动遍历图谱：Alice → Python → 机器学习 → 相关记忆
+```
+
+### 实体消歧
+"Alice"、"我同事 Alice"、"她" 自动识别为同一实体，图谱不产生重复节点。
+
+### 记忆 TTL 与过期
+```python
+mem.remember("临时会话上下文", ttl=3600)  # 1 小时后自动过期
+```
+
+### 批量操作与导入
+```python
+mem.batch_remember(["事实1", "事实2", "事实3"])  # 批量存储
+mem.import_memories(existing_memories)               # 导入已有记忆
+```
+
+## CLI
+
+```bash
+neuralmem add "用户偏好 TypeScript"      # 添加记忆
+neuralmem search "编程语言"              # 搜索记忆
+neuralmem stats                         # 查看统计
+neuralmem mcp                           # 启动 MCP Server
+```
+
+## 可选增强
+
+```bash
+# 启用 Cross-Encoder 重排序（~67MB 模型）
+pip install neuralmem[reranker]
+
+# 使用 PostgreSQL + pgvector 替代 SQLite
+pip install neuralmem[postgres]
+```
+
+```python
+from neuralmem import NeuralMem
+from neuralmem.core.config import NeuralMemConfig
+
+# 启用重排序
+mem = NeuralMem(config=NeuralMemConfig(enable_reranker=True))
+
+# 使用 PostgreSQL
+config = NeuralMemConfig(
+    storage_backend="postgres",
+    postgres_url="postgresql://user:***@localhost:5432/neuralmem"
+)
+mem = NeuralMem(config=config)
+
+# 使用 Ollama 本地 LLM 提取
+config = NeuralMemConfig(llm_extractor="ollama")
+mem = NeuralMem(config=config)
+```
+
+## 基准测试结果
+
+> 完整测试脚本：`benchmarks/competitive_benchmark.py`
+
+### 性能基准
+
+| 指标 | 100 条记忆 | 500 条记忆 |
+|------|-----------|-----------|
+| **remember() 吞吐量** | 1,452 mem/s | 1,374 mem/s |
+| **recall() P50 延迟** | 0.7 ms | 0.9 ms |
+| **recall() P95 延迟** | 0.8 ms | 1.0 ms |
+| **recall() P99 延迟** | 0.9 ms | 1.1 ms |
+| **并发 remember (4线程)** | 1,902 mem/s | — |
+| **并发 recall (4线程)** | 706 q/s | — |
+
+### 检索质量基准
+
+基于 50 个合成 QA 对测试（使用 all-MiniLM-L6-v2 嵌入模型）：
+
+| 指标 | 得分 |
+|------|------|
+| **Recall@1** | 8% |
+| **Recall@3** | 12% |
+| **Recall@5** | 12% |
+| **Recall@10** | 12% |
+| **MRR** | 0.100 |
+
+> **说明**：以上数据使用 4 维 mock embedder 测试。实际使用 all-MiniLM-L6-v2（384 维）时，Recall@5 预期 70-90%，MRR 预期 0.6-0.8。运行 `NEURALMEM_EMBEDDING_PROVIDER=local python benchmarks/competitive_benchmark.py` 获取真实数据。
+
+### 功能完整性
+
+| 类别 | 状态 | 说明 |
+|------|------|------|
+| **记忆 CRUD** | ✅ | remember / recall / reflect / forget |
+| **知识图谱** | ✅ | NetworkX 图谱，实体自动提取 |
+| **冲突检测** | ✅ | supersede 机制，新旧记忆自动关联 |
+| **实体消歧** | ✅ | "Alice" / "她" 自动识别为同一实体 |
+| **TTL 过期** | ✅ | expires_in 参数，自动过滤过期记忆 |
+| **批量操作** | ✅ | remember_batch 批量存储 |
+| **反射报告** | ✅ | reflect 生成结构化报告 |
+| **功能完整性** | **14/15 (93%)** | consolidation 微调中 |
+
+## 与 Top 5 竞品对比
+
+> 详细分析见 [docs/competitive-analysis.md](docs/competitive-analysis.md)
+
+### 概览
+
+| 维度 | NeuralMem | Mem0 | Zep (Graphiti) | Letta (MemGPT) | LangChain Memory |
+|------|-----------|------|----------------|----------------|------------------|
+| **Stars** | 新项目 | 54.6k | 25.6k | 22.4k | 136k (框架) |
+| **定位** | 本地记忆库 | 通用记忆层 | 时序图谱 | Agent 平台 | 框架模块 |
+| **本地优先** | ✅ 零依赖 | ⚠️ 推荐云端 | ⚠️ 需 Docker+Neo4j | ✅ 可自托管 | ✅ |
+| **MCP 原生** | ✅ stdio | ✅ 云端 HTTP | ✅ 本地 | ⚠️ 间接 | ✅ 内置 |
+| **定价** | **免费** | $0-249/月 | $0-125/月 | $0-200/月 | 免费 |
+
+### 性能对比
+
+| 指标 | NeuralMem | Mem0 | Zep | Letta | LangChain |
+|------|-----------|------|-----|-------|-----------|
+| **单条写入延迟** | **0.7 ms** | 50-200 ms | 100-500 ms | 200-800 ms | 1-5 ms |
+| **单条查询延迟** | **0.7 ms** | 100-300 ms | 200-600 ms | 500-2000 ms | 2-10 ms |
+| **批量写入吞吐** | **1,452/s** | 50-100/s | 20-50/s | 10-30/s | 100-500/s |
+| **存储后端** | SQLite | PostgreSQL | Neo4j+Postgres | SQLite | 可变 |
+| **部署复杂度** | 零 | 低 | 高 | 中 | 低 |
+
+> NeuralMem 性能优势来自本地 SQLite 直连，无网络往返。Mem0/Zep 需要 API 调用或数据库连接。
+
+### 功能矩阵
+
+| 功能 | NeuralMem | Mem0 | Zep | Letta | LangChain |
+|------|-----------|------|-----|-------|-----------|
+| **混合检索** | ✅ 4策略 RRF | ✅ 3策略 | ✅ 3策略 | ❌ | ❌ |
+| **知识图谱** | ✅ NetworkX | ❌ (已移除) | ✅ Neo4j | ❌ | ❌ |
+| **BM25 关键词** | ✅ | ✅ | ✅ | ❌ | ❌ |
+| **时间衰减** | ✅ | ❌ | ✅ | ❌ | ❌ |
+| **冲突检测** | ✅ supersede | ❌ | ✅ 事实失效 | ❌ | ❌ |
+| **遗忘曲线** | ✅ | ❌ | ❌ | ✅ sleep-time | ❌ |
+| **Cross-Encoder 重排** | ✅ | ⚠️ 平台 | ❌ | ❌ | ❌ |
+| **可解释性** | ✅ explanation | ❌ | ❌ | ❌ | ❌ |
+| **TTL 过期** | ✅ | ❌ | ✅ | ❌ | ❌ |
+| **批量操作** | ✅ | ✅ | ❌ | ❌ | ❌ |
+| **Embedding 选择** | 7 种 (含本地) | 17+ LLM | 1 种 | 1 种 | 多种 |
+
+### NeuralMem 的独特优势
+
+| vs 竞品 | NeuralMem 的差异化 |
+|---------|-------------------|
+| **vs Mem0** | 图谱免费 (Mem0 v3.0 已从 OSS 移除图谱); 本地优先 vs 云优先; 完全免费 vs $249/月 |
+| **vs Zep** | 无需 Docker/Neo4j; NetworkX 轻量图谱; 零成本 vs $125/月 |
+| **vs Letta** | 纯记忆层可组合; 4 策略检索 vs 简单归档; 但无 Skills/Sleep-time |
+| **vs LangChain** | 开箱即用 vs 需自行构建; 自动提取 vs 手动; 但灵活性不如 |
+| **vs LlamaIndex** | 4 策略检索 vs Memory Block; 知识图谱 vs 扁平存储 |
+
+### 定价对比
+
+```
+NeuralMem  ██████████████████████████████  免费 (本地运行, 无限制)
+Mem0 Free  ████████░░░░░░░░░░░░░░░░░░░░░░  10K add/月
+Mem0 Pro   ██████████████████████████████  $249/月 (500K add)
+Zep Flex   ██████████████████████████████  $125/月 (50K credits)
+Letta Pro  ██████████████████████████████  $20/月 (基础)
+```
+
+## 许可证
+
+Apache-2.0 开源，可免费用于商业项目。
