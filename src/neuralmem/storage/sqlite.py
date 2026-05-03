@@ -114,11 +114,16 @@ def _blob_to_embedding(blob: bytes | None) -> np.ndarray:
 def _memory_from_row(row: sqlite3.Row) -> Memory:
     expires_at_raw = row["expires_at"] if "expires_at" in row.keys() else None
     expires_at = datetime.fromisoformat(expires_at_raw) if expires_at_raw else None
+    # 防御性解析：并发读写时 SQLite 返回空值/None，使用安全默认值
+    raw_type = row["memory_type"]
+    memory_type = MemoryType(raw_type) if raw_type else MemoryType.SEMANTIC
+    raw_scope = row["scope"]
+    scope = MemoryScope(raw_scope) if raw_scope else MemoryScope.USER
     return Memory(
         id=row["id"],
         content=row["content"],
-        memory_type=MemoryType(row["memory_type"]),
-        scope=MemoryScope(row["scope"]),
+        memory_type=memory_type,
+        scope=scope,
         user_id=row["user_id"],
         agent_id=row["agent_id"],
         session_id=row["session_id"],
@@ -160,7 +165,12 @@ class SQLiteStorage(StorageBackend):
     # ------------------------------------------------------------------
 
     def _make_connection(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self._db_path, check_same_thread=False)
+        # isolation_level=None disables Python's implicit transaction management.
+        # This prevents "cannot commit - no transaction is active" errors in
+        # multi-threaded scenarios (e.g. ThreadPoolExecutor in retrieval engine).
+        # All statements auto-commit; multi-statement writes that need atomicity
+        # use explicit BEGIN/COMMIT via _execute_tx().
+        conn = sqlite3.connect(self._db_path, check_same_thread=False, isolation_level=None)
         conn.row_factory = sqlite3.Row
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute("PRAGMA synchronous=NORMAL")
@@ -235,11 +245,44 @@ class SQLiteStorage(StorageBackend):
         self._conn.commit()
 
     def _execute(self, sql: str, params: tuple[Any, ...] = ()) -> sqlite3.Cursor:
-        try:
-            with self._lock:
-                return self._conn.execute(sql, params)
-        except sqlite3.Error as exc:
-            raise StorageError(f"SQLite error: {exc}") from exc
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                with self._lock:
+                    return self._conn.execute(sql, params)
+            except sqlite3.OperationalError as exc:
+                if "cannot commit" in str(exc) and attempt < max_retries - 1:
+                    import time
+                    time.sleep(0.01 * (attempt + 1))
+                    continue
+                raise StorageError(f"SQLite error: {exc}") from exc
+            except sqlite3.Error as exc:
+                raise StorageError(f"SQLite error: {exc}") from exc
+        raise StorageError("SQLite error: max retries exceeded")  # unreachable
+
+    def _fetchall(
+        self, sql: str, params: tuple[Any, ...] = ()
+    ) -> list[sqlite3.Row]:
+        """Execute and fetchall under the same lock to prevent cursor corruption.
+
+        Includes retry logic for concurrent write errors
+        (e.g. 'cannot commit - no transaction is active').
+        """
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                with self._lock:
+                    cur = self._conn.execute(sql, params)
+                    return cur.fetchall()
+            except sqlite3.OperationalError as exc:
+                if "cannot commit" in str(exc) and attempt < max_retries - 1:
+                    import time
+                    time.sleep(0.01 * (attempt + 1))
+                    continue
+                raise StorageError(f"SQLite error: {exc}") from exc
+            except sqlite3.Error as exc:
+                raise StorageError(f"SQLite error: {exc}") from exc
+        return []  # unreachable, but satisfies type checker
 
     # ------------------------------------------------------------------
     # StorageBackend 实现
@@ -322,11 +365,12 @@ class SQLiteStorage(StorageBackend):
         return memory.id
 
     def get_memory(self, memory_id: str) -> Memory | None:
-        cur = self._execute("SELECT * FROM memories WHERE id = ?", (memory_id,))
-        row = cur.fetchone()
-        if row is None:
+        rows = self._fetchall(
+            "SELECT * FROM memories WHERE id = ?", (memory_id,)
+        )
+        if not rows:
             return None
-        return _memory_from_row(row)
+        return _memory_from_row(rows[0])
 
     def update_memory(self, memory_id: str, **kwargs: object) -> None:
         allowed = {
@@ -477,7 +521,7 @@ class SQLiteStorage(StorageBackend):
         where = " AND ".join(conditions)
         try:
             # vec0 要求 MATCH + LIMIT 在同一查询中，使用子查询模式
-            cur = self._execute(
+            rows = self._fetchall(
                 f"""
                 SELECT m.id, v.distance
                 FROM (
@@ -491,7 +535,6 @@ class SQLiteStorage(StorageBackend):
                 """,
                 (_embedding_to_blob(vector), limit * 3) + tuple(params) + (limit,),
             )
-            rows = cur.fetchall()
             # distance 越小越相似，转换为相似度分数（余弦距离 = 1 - 余弦相似度）
             results = []
             for row in rows:
@@ -501,7 +544,7 @@ class SQLiteStorage(StorageBackend):
                     results.append((row["id"], score))
             return results
         except Exception as exc:
-            _logger.warning("vec0 search failed (%s). Falling back to numpy.", exc)
+            _logger.debug("vec0 search unavailable (%s). Using numpy fallback.", exc)
             return self._vector_search_numpy(vector, user_id, memory_types, limit)
 
     def _vector_search_numpy(
@@ -524,11 +567,10 @@ class SQLiteStorage(StorageBackend):
             params.extend(t.value for t in memory_types)
 
         where = " AND ".join(conditions)
-        cur = self._execute(
+        rows = self._fetchall(
             f"SELECT id, embedding FROM memories WHERE {where}",
             (now_str,) + tuple(params),
         )
-        rows = cur.fetchall()
 
         query_vec = np.array(vector, dtype=np.float32)
         scored: list[tuple[str, float]] = []
@@ -587,7 +629,7 @@ class SQLiteStorage(StorageBackend):
         params.append(limit)
 
         try:
-            cur = self._execute(
+            rows = self._fetchall(
                 f"""
                 SELECT f.id, f.rank
                 FROM memories_fts f
@@ -598,8 +640,7 @@ class SQLiteStorage(StorageBackend):
                 """,
                 tuple(params),
             )
-            rows = cur.fetchall()
-        except sqlite3.OperationalError:
+        except (sqlite3.OperationalError, StorageError):
             # FTS 语法错误等，返回空结果
             return []
 
@@ -645,11 +686,10 @@ class SQLiteStorage(StorageBackend):
             f"AND {' AND '.join(time_conditions)}" if time_conditions else ""
         )
 
-        cur = self._execute(
+        rows = self._fetchall(
             f"SELECT id, created_at FROM memories WHERE id IN ({placeholders}) {extra_where}",
             tuple(params),
         )
-        rows = cur.fetchall()
 
         now = datetime.now(timezone.utc)
         scored: list[tuple[str, float]] = []
@@ -677,10 +717,10 @@ class SQLiteStorage(StorageBackend):
             return []
 
         placeholders = ",".join("?" for _ in similar_ids)
-        cur = self._execute(
+        rows = self._fetchall(
             f"SELECT * FROM memories WHERE id IN ({placeholders})", tuple(similar_ids)
         )
-        return [_memory_from_row(row) for row in cur.fetchall()]
+        return [_memory_from_row(row) for row in rows]
 
     def record_access(self, memory_id: str) -> None:
         with self._lock:
@@ -742,20 +782,19 @@ class SQLiteStorage(StorageBackend):
         """获取所有记忆，可按 user_id 过滤。"""
         now_str = _now_iso()
         try:
-            with self._lock:
-                if user_id is not None:
-                    cursor = self._execute(
-                        "SELECT * FROM memories WHERE user_id = ? "
-                        "AND (expires_at IS NULL OR expires_at > ?) LIMIT ?",
-                        (user_id, now_str, limit),
-                    )
-                else:
-                    cursor = self._execute(
-                        "SELECT * FROM memories "
-                        "WHERE (expires_at IS NULL OR expires_at > ?) LIMIT ?",
-                        (now_str, limit),
-                    )
-                return [_memory_from_row(row) for row in cursor.fetchall()]
+            if user_id is not None:
+                rows = self._fetchall(
+                    "SELECT * FROM memories WHERE user_id = ? "
+                    "AND (expires_at IS NULL OR expires_at > ?) LIMIT ?",
+                    (user_id, now_str, limit),
+                )
+            else:
+                rows = self._fetchall(
+                    "SELECT * FROM memories "
+                    "WHERE (expires_at IS NULL OR expires_at > ?) LIMIT ?",
+                    (now_str, limit),
+                )
+            return [_memory_from_row(row) for row in rows]
         except StorageError:
             raise
         except Exception as e:

@@ -127,6 +127,10 @@ class NeuralMem:
         expires_at: datetime | None = None,
         expires_in: timedelta | None = None,
     ) -> list[Memory]:
+        # 前置校验：拒绝空内容/纯空白
+        if not content or not content.strip():
+            return []
+
         # Resolve expiration: expires_at takes precedence over expires_in
         resolved_expires_at = expires_at
         if resolved_expires_at is None and expires_in is not None:
@@ -495,7 +499,7 @@ class NeuralMem:
 
     def import_memories(
         self,
-        data: str,
+        data: str | list[dict[str, object]],
         *,
         format: str = "json",
         user_id: str | None = None,
@@ -505,7 +509,7 @@ class NeuralMem:
         Import memories from exported data.
 
         Args:
-            data: The exported data string
+            data: The exported data string, or a list of memory dicts
             format: 'json', 'markdown', or 'csv'
             user_id: Override user_id for imported memories
             skip_duplicates: If True, skip memories with similar content already stored
@@ -513,19 +517,23 @@ class NeuralMem:
         Returns:
             Number of memories imported
         """
-        fmt = format.lower()
-
-        if fmt == ExportFormat.JSON:
-            items = self._import_json(data)
-        elif fmt == ExportFormat.MARKDOWN:
-            items = self._import_markdown(data)
-        elif fmt == ExportFormat.CSV:
-            items = self._import_csv(data)
+        # Accept list of dicts directly (convenience for programmatic use)
+        if isinstance(data, list):
+            items = data
         else:
-            raise NeuralMemError(
-                f"Unsupported import format: {format!r}. "
-                "Use json, markdown, or csv."
-            )
+            fmt = format.lower()
+
+            if fmt == ExportFormat.JSON:
+                items = self._import_json(data)
+            elif fmt == ExportFormat.MARKDOWN:
+                items = self._import_markdown(data)
+            elif fmt == ExportFormat.CSV:
+                items = self._import_csv(data)
+            else:
+                raise NeuralMemError(
+                    f"Unsupported import format: {format!r}. "
+                    "Use json, markdown, or csv."
+                )
 
         imported = 0
         for raw in items:
@@ -581,7 +589,7 @@ class NeuralMem:
         """Parse JSON export format back to list of raw dicts."""
         try:
             items = json.loads(data)
-        except json.JSONDecodeError as e:
+        except (json.JSONDecodeError, TypeError) as e:
             raise NeuralMemError(f"Invalid JSON data: {e}") from e
 
         if not isinstance(items, list):

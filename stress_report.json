@@ -1,0 +1,113 @@
+{
+  "timestamp": "2026-05-03T02:00:15.207416+00:00",
+  "total": 15,
+  "passed": 15,
+  "failed": 0,
+  "tests": [
+    {
+      "name": "high_volume_remember_recall",
+      "passed": true,
+      "error": null,
+      "detail": "remembered=500, stored=520, active=519, vs_hits=20",
+      "duration": 5.448637832887471
+    },
+    {
+      "name": "concurrent_read_write",
+      "passed": true,
+      "error": null,
+      "detail": "threads=8, total_memories=80, errors=0",
+      "duration": 1.0603845419827849
+    },
+    {
+      "name": "edge_case_inputs",
+      "passed": true,
+      "error": null,
+      "detail": "stored=4, edge_cases_handled=9",
+      "duration": 14.128933082800359
+    },
+    {
+      "name": "delete_and_forget",
+      "passed": true,
+      "error": null,
+      "detail": "before=100, deleted_ok=True",
+      "duration": 0.5267012498807162
+    },
+    {
+      "name": "export_import_roundtrip",
+      "passed": true,
+      "error": null,
+      "detail": "exported=7402, imported=20, overlap=20",
+      "duration": 0.34646495897322893
+    },
+    {
+      "name": "session_api_stress",
+      "passed": true,
+      "error": null,
+      "detail": "sessions=5, total_memories=100, errors=0",
+      "duration": 0.5671683750115335
+    },
+    {
+      "name": "expired_memories",
+      "passed": true,
+      "error": null,
+      "detail": "before=20, cleaned=10, recall_results=10",
+      "duration": 0.17360366717912257
+    },
+    {
+      "name": "reflect_and_consolidate",
+      "passed": true,
+      "error": null,
+      "detail": "reflect_len=179, consolidate={'decayed': 0, 'forgotten': 0, 'merged': 29}, stats_keys=['total', 'by_type', 'entity_count', 'node_count', 'edge_count']",
+      "duration": 0.2207251659128815
+    },
+    {
+      "name": "recall_with_filters",
+      "passed": true,
+      "error": null,
+      "detail": "user_filter=1, tag_filter=4, type_filter=4, time_filter=4, combined=1",
+      "duration": 0.1250338749960065
+    },
+    {
+      "name": "importance_reinforcement",
+      "passed": true,
+      "error": null,
+      "detail": "initial=0.70, final=1.00",
+      "duration": 0.12506645894609392
+    },
+    {
+      "name": "large_dataset_stability",
+      "passed": true,
+      "error": null,
+      "detail": "stored=1000, write_time=8.6s, recall_results=43, read_time=0.0s, stats={'total': 1000, 'by_type': {'semantic': 1000}, 'entity_count': 0, 'node_count': 0, 'edge_count': 0}",
+      "duration": 8.624380249995738
+    },
+    {
+      "name": "context_manager",
+      "passed": true,
+      "error": null,
+      "detail": "initial_recall=10, reopened_recall=10",
+      "duration": 0.3074751670937985
+    },
+    {
+      "name": "resolve_conflict",
+      "passed": true,
+      "error": null,
+      "detail": "supersede_ok=True, reactivate_ok=True, delete_ok=False",
+      "duration": 0.11565341684035957
+    },
+    {
+      "name": "import_edge_cases",
+      "passed": true,
+      "error": null,
+      "detail": "all_edge_cases_handled=8",
+      "duration": 0.09301991621032357
+    },
+    {
+      "name": "vec0_consistency",
+      "passed": true,
+      "error": null,
+      "detail": "vec0_sync_ok=True",
+      "duration": 0.1261371250730008
+    }
+  ]
+}
