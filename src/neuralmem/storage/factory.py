@@ -143,6 +143,9 @@ _BUILTIN_BACKENDS: list[tuple[str, str, str, str]] = [
     ("qdrant", "neuralmem.storage.qdrant_store", "QdrantVectorStore", "qdrant"),
     ("faiss", "neuralmem.storage.faiss_store", "FAISSVectorStore", "faiss"),
     ("redis", "neuralmem.storage.redis_store", "RedisVectorStore", "redis"),
+    ("pinecone", "neuralmem.storage.pinecone_store", "PineconeVectorStore", "pinecone"),
+    ("milvus", "neuralmem.storage.milvus_store", "MilvusVectorStore", "milvus"),
+    ("weaviate", "neuralmem.storage.weaviate_store", "WeaviateVectorStore", "weaviate"),
 ]
 
 for _name, _mod, _cls, _extra in _BUILTIN_BACKENDS:
