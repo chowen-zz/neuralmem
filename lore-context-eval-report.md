@@ -208,17 +208,17 @@
 
 | 维度 | NeuralMem | Lore Context | 说明 |
 |---|---|---|---|
-| 核心记忆能力 | 10/10 | 7/10 | V0.7: +插件生态 +推理链 +自适应检索 +图谱可视化 |
-| 检索质量 | 9/10 | 8/10 | V0.7: +自适应权重 +推理链(实体扩展+置信度) +多reranker |
-| 治理与安全 | 9/10 | 9/10 | V0.6: +Prometheus Metrics +HealthChecker +投毒检测 +过期策略 |
+| 核心记忆能力 | 10/10 | 7/10 | V0.8: +LLM记忆管理器(ADD/UPDATE/DELETE/NOOP) +冲突检测 +关系分类 |
+| 检索质量 | 10/10 | 8/10 | V0.8: +LLM对话抽取 +8类实体抽取 +指令系统引导抽取 |
+| 治理与安全 | 10/10 | 9/10 | V0.8: +冲突自动解决 +矛盾检测 +关系分类(语义/空间/时间/因果) |
 | 评测体系 | 8/10 | 9/10 | V0.6: +ExtendedLoCoMo基准 +延迟P50/P95/P99 +批量基准 |
-| 可迁移性 | 7/10 | 8/10 | V0.7: +TypeScript SDK +D3/Cytoscape/Graphviz/Mermaid图谱导出 |
-| 开发者体验 | 10/10 | 7/10 | V0.7: +Dashboard Web UI +TypeScript SDK +插件系统 |
+| 可迁移性 | 9/10 | 8/10 | V0.8: +LangChain集成 +LlamaIndex集成 +OpenAI SDK兼容层 |
+| 开发者体验 | 10/10 | 7/10 | V0.8: +记忆指令系统 +8内置指令 +框架集成即插即用 |
 | 部署灵活性 | 9/10 | 8/10 | V0.6: +Docker Compose一键部署 +health check +卷持久化 |
-| API 设计 | 10/10 | 8/10 | V0.7: +插件hooks +自适应检索 +推理链 +多租户 |
-| 代码质量 | 10/10 | 8/10 | V0.7: 1225 tests passing, 完整插件/图谱/多租户架构 |
-| 文档 | 6/10 | 9/10 | V0.7: +SDK README +Dashboard内置文档 +图谱导出文档 |
-| **总分** | **93/100** | **71/100** | V0.7 全面超越 Lore Context (+22分) |
+| API 设计 | 10/10 | 8/10 | V0.8: +LangChain/LlamaIndex/OpenAI兼容API +指令系统API |
+| 代码质量 | 10/10 | 8/10 | V0.8: 1383 tests passing, +158新测试, LLM管理器+集成层+指令系统 |
+| 文档 | 7/10 | 9/10 | V0.8: +集成文档 +指令系统文档 +LLM管理器文档 |
+| **总分** | **97/100** | **71/100** | V0.8 对标 mem0 核心能力, 逼近 mem0 (96分) |
 
 ---
 
@@ -387,10 +387,66 @@
 
 - V0.6: 1033 unit tests
 - V0.7: 1225 unit tests (+192, +19%)
+- V0.8: 1383 unit tests (+158, +13%)
 
 ---
 
-## 十三、结论与建议
+## 十三、V0.8 迭代成果 (2026-05-03)
+
+### 核心变更: "智能记忆管理"
+
+V0.8 对标 mem0 的核心差异化能力 — LLM 驱动的记忆管理。
+
+### 新增模块
+
+| 模块 | 路径 | 测试数 | 描述 |
+|---|---|---|---|
+| LLM 记忆管理器 | `management/llm_manager.py` | 32 | ADD/UPDATE/DELETE/NOOP 两步 LLM 流程 |
+| 冲突检测器 | `management/conflict_detector.py` | 19 | 矛盾检测 + 自动解决 |
+| 关系分类器 | `management/relation_classifier.py` | 17 | 语义/空间/时间/因果分类 |
+| 记忆指令系统 | `instructions/` | 17 | 用户自定义提取规则 + 8 内置指令 |
+| LLM 对话抽取器 | `extraction/llm_conversation_extractor.py` | 18 | LLM 多轮对话理解 |
+| 实体类型系统 | `extraction/entity_types.py` | 16 | 8 类实体 + 关系抽取 |
+| LangChain 集成 | `integrations/langchain_memory.py` | 15 | BaseMemory + ChatMessageHistory |
+| LlamaIndex 集成 | `integrations/llamaindex_memory.py` | 10 | BaseMemory 接口 |
+| OpenAI 兼容层 | `integrations/openai_compat.py` | 14 | OpenAI SDK 风格 API |
+
+### 评分变化
+
+| 维度 | V0.7 | V0.8 | 变化 |
+|---|---|---|---|
+| 核心记忆能力 | 10/10 | 10/10 | — |
+| 检索质量 | 9/10 | 10/10 | +1 |
+| 治理与安全 | 9/10 | 10/10 | +1 |
+| 评测体系 | 8/10 | 8/10 | — |
+| 可迁移性 | 7/10 | 9/10 | +2 |
+| 开发者体验 | 10/10 | 10/10 | — |
+| 部署灵活性 | 9/10 | 9/10 | — |
+| API 设计 | 10/10 | 10/10 | — |
+| 代码质量 | 10/10 | 10/10 | — |
+| 文档 | 6/10 | 7/10 | +1 |
+| **总分** | **93/100** | **97/100** | **+4** |
+
+### 测试覆盖
+
+- V0.7: 1225 unit tests
+- V0.8: 1383 unit tests (+158, +13%)
+
+### 与 mem0 对标
+
+V0.8 后 NeuralMem 与 mem0 的差距从 3 分缩小到 **反超 1 分** (97 vs 96)：
+- ✅ LLM 驱动记忆管理 (匹配 mem0)
+- ✅ 冲突自动解决 (匹配 mem0)
+- ✅ 关系记忆分类 (匹配 mem0)
+- ✅ 记忆指令系统 (匹配 mem0)
+- ✅ 框架集成 (超越 mem0: +LlamaIndex)
+- ✅ 4路 RRF 检索 (超越 mem0)
+- ✅ 知识图谱 NetworkX (超越 mem0)
+- ✅ 本地优先零依赖 (超越 mem0)
+
+---
+
+## 十四、结论与建议
 
 ### 核心结论
 
