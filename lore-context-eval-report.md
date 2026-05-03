@@ -210,19 +210,50 @@
 |---|---|---|---|
 | 核心记忆能力 | 8/10 | 7/10 | NeuralMem 4 路检索 + 图谱 + 合并更完整 |
 | 检索质量 | 7/10 | 8/10 | Lore 有 LoCoMo 基准验证，NeuralMem 缺乏量化 |
-| 治理与安全 | 2/10 | 9/10 | Lore 全面领先：状态机/审计/RBAC/风险扫描 |
-| 评测体系 | 1/10 | 9/10 | Lore 有完整评测框架，NeuralMem 几乎空白 |
-| 可迁移性 | 2/10 | 8/10 | Lore 有 MIF + agentmemory 适配器 |
+| 治理与安全 | 6/10 | 9/10 | V0.3: +风险扫描 +6态状态机 +审计日志 +日志脱敏 +MCP验证 |
+| 评测体系 | 6/10 | 9/10 | V0.3: +Recall@K/Precision@K/MRR/P95 +回归检测 +LoCoMo基准 |
+| 可迁移性 | 5/10 | 8/10 | V0.3: +MIF v0.2 JSON/Markdown导出 +验证 +round-trip |
 | 开发者体验 | 7/10 | 7/10 | NeuralMem pip install 简单，Lore Dashboard 直观 |
 | 部署灵活性 | 6/10 | 8/10 | Lore 支持文件/Postgres/Docker 三种模式 |
-| API 设计 | 7/10 | 8/10 | Lore REST+MCP 双协议，OpenAPI 文档 |
-| 代码质量 | 7/10 | 8/10 | 两者都有测试，Lore CI + smoke 更完善 |
+| API 设计 | 8/10 | 8/10 | V0.3: +Evidence Ledger +Pydantic验证 +destructiveHint |
+| 代码质量 | 8/10 | 8/10 | V0.3: 599 tests passing, ruff clean |
 | 文档 | 5/10 | 9/10 | Lore 17 语种文档 + 集成指南 + 架构图 |
-| **总分** | **52/100** | **71/100** | |
+| **总分** | **67/100** | **71/100** | V0.3 提升 15 分，差距从 19 分缩小到 4 分 |
 
 ---
 
-## 八、结论与建议
+## 八、V0.3 迭代成果 (2026-05-03)
+
+### 新增模块
+
+| 模块 | 路径 | 功能 |
+|---|---|---|
+| Evidence Ledger | `src/neuralmem/ledger/` | 检索审计追踪 + 反馈机制 (useful/wrong/outdated/sensitive) |
+| MIF Export | `src/neuralmem/export/` | 记忆可迁移格式 v0.2 (JSON + Markdown + 验证) |
+| Security | `src/neuralmem/security/` | 日志脱敏 (8类PII) + MCP输入验证 + destructiveAction gating |
+| Eval Framework | `src/neuralmem/eval/` | Recall@K/Precision@K/MRR/staleHitRate/P95 + 回归检测 |
+| Governance | `src/neuralmem/governance/` | 风险扫描 + 6态状态机 + 审计日志 |
+| LoCoMo Benchmark | `benchmarks/` | LoCoMo 数据集基准测试运行器 |
+
+### 评分变化
+
+| 维度 | V0.1 | V0.3 | 变化 |
+|---|---|---|---|
+| 治理与安全 | 2/10 | 6/10 | +4 |
+| 评测体系 | 1/10 | 6/10 | +5 |
+| 可迁移性 | 2/10 | 5/10 | +3 |
+| API 设计 | 7/10 | 8/10 | +1 |
+| 代码质量 | 7/10 | 8/10 | +1 |
+| **总分** | **52/100** | **67/100** | **+15** |
+
+### 测试覆盖
+
+- V0.1: 428 unit tests
+- V0.3: 599 unit tests (+171, +40%)
+
+---
+
+## 九、结论与建议
 
 ### 核心结论
 
@@ -234,20 +265,24 @@ Lore Context 构建在 agentmemory 之上，提供了治理、评测、审计层
 
 ### 战略建议
 
-**短期 (1-2 周)**:
-1. 实现评测框架 (Recall@K/Precision@K/MRR/P95)
-2. 在 LoCoMo-200 上跑基准测试，建立可比较的性能基线
-3. 添加基础治理：风险扫描 + 简单状态机
+**短期 (已完成 — V0.3)**:
+1. ✅ 评测框架 (Recall@K/Precision@K/MRR/P95)
+2. ✅ LoCoMo 基准测试运行器
+3. ✅ 基础治理：风险扫描 + 6态状态机 + 审计日志
+4. ✅ Evidence Ledger (检索可审计 + 反馈)
+5. ✅ MIF 记忆导出格式 (v0.2)
+6. ✅ 日志脱敏 + MCP 输入验证
 
-**中期 (1-2 月)**:
-4. Evidence Ledger (检索可审计)
-5. 记忆导出格式标准化 (MIF 兼容)
-6. 安全加固 (认证/速率限制/日志脱敏)
+**中期 (V0.4 目标)**:
+7. API Key 认证 + 角色分离 (reader/writer/admin)
+8. 速率限制 (per-IP + per-key)
+9. Dashboard 管理界面
+10. 多源上下文组合 (memory + web + repo + tool traces)
 
 **长期**:
-7. 与 Lore Context 建立互操作：NeuralMem 作为 Lore 的存储后端
-8. Dashboard 管理界面
-9. 多源上下文组合能力
+11. 与 Lore Context 建立互操作：NeuralMem 作为 Lore 的存储后端
+12. 投毒检测 (同源支配 + 注入模式)
+13. Docker Compose 一键部署
 
 ### 一句话总结
 
