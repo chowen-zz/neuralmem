@@ -1,0 +1,28 @@
+{
+  "name": "@neuralmem/sdk",
+  "version": "0.7.0",
+  "description": "TypeScript SDK for NeuralMem — Memory as Infrastructure",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "module": "dist/index.js",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "check": "tsc --noEmit"
+  },
+  "keywords": [
+    "neuralmem",
+    "memory",
+    "ai",
+    "agent",
+    "sdk"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=16.0.0"
+  },
+  "files": [
+    "dist/",
+    "README.md"
+  ]
+}

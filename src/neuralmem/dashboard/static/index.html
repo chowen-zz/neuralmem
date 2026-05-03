@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NeuralMem Dashboard v0.7</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+</head>
+<body>
+  <!-- Header -->
+  <header class="header">
+    <div class="header-brand">
+      <span class="header-logo">&#9672;</span>
+      <h1>NeuralMem Dashboard <span class="version">v0.7</span></h1>
+    </div>
+    <div class="header-status" id="header-status">
+      <span class="status-dot" id="status-dot"></span>
+      <span id="status-text">Checking...</span>
+    </div>
+  </header>
+
+  <div class="layout">
+    <!-- Sidebar -->
+    <nav class="sidebar">
+      <ul class="nav-list">
+        <li class="nav-item active" data-page="overview">
+          <span class="nav-icon">&#9632;</span> Overview
+        </li>
+        <li class="nav-item" data-page="memories">
+          <span class="nav-icon">&#9776;</span> Memories
+        </li>
+        <li class="nav-item" data-page="graph">
+          <span class="nav-icon">&#9678;</span> Graph
+        </li>
+        <li class="nav-item" data-page="settings">
+          <span class="nav-icon">&#9881;</span> Settings
+        </li>
+      </ul>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="content">
+      <!-- Overview Page -->
+      <section class="page active" id="page-overview">
+        <h2>Overview</h2>
+        <div class="card-grid">
+          <div class="card" id="card-health">
+            <h3>Health Status</h3>
+            <div class="card-value" id="health-status">--</div>
+            <div class="card-details" id="health-details"></div>
+          </div>
+          <div class="card" id="card-memory-count">
+            <h3>Memories</h3>
+            <div class="card-value" id="memory-count">--</div>
+            <div class="card-details" id="memory-details"></div>
+          </div>
+          <div class="card" id="card-graph">
+            <h3>Knowledge Graph</h3>
+            <div class="card-value" id="graph-nodes">--</div>
+            <div class="card-details" id="graph-edges"></div>
+          </div>
+          <div class="card" id="card-metrics">
+            <h3>Metrics</h3>
+            <div class="card-value" id="metrics-counters">--</div>
+            <div class="card-details" id="metrics-details"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Memories Page -->
+      <section class="page" id="page-memories">
+        <h2>Memories</h2>
+        <div class="toolbar">
+          <input type="text" id="memory-search" class="input"
+                 placeholder="Search memories...">
+          <select id="memory-type-filter" class="input">
+            <option value="">All Types</option>
+            <option value="fact">Fact</option>
+            <option value="preference">Preference</option>
+            <option value="episodic">Episodic</option>
+            <option value="semantic">Semantic</option>
+            <option value="procedural">Procedural</option>
+            <option value="working">Working</option>
+          </select>
+          <button class="btn" id="btn-search-memory">Search</button>
+        </div>
+        <table class="table" id="memories-table">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Content</th>
+              <th>Type</th>
+              <th>Importance</th>
+              <th>Tags</th>
+              <th>Created</th>
+              <th>Access</th>
+            </tr>
+          </thead>
+          <tbody id="memories-tbody"></tbody>
+        </table>
+        <div class="pagination" id="memories-pagination"></div>
+      </section>
+
+      <!-- Graph Page -->
+      <section class="page" id="page-graph">
+        <h2>Knowledge Graph</h2>
+        <div class="graph-controls">
+          <button class="btn" id="btn-refresh-graph">Refresh Graph</button>
+          <span class="graph-info" id="graph-info"></span>
+        </div>
+        <div class="graph-container" id="graph-container">
+          <svg id="graph-svg"></svg>
+        </div>
+      </section>
+
+      <!-- Settings Page -->
+      <section class="page" id="page-settings">
+        <h2>Settings</h2>
+        <div class="settings-grid" id="settings-grid">
+          <p>Loading configuration...</p>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
