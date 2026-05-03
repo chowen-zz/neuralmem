@@ -4,8 +4,8 @@ from __future__ import annotations
 from neuralmem.core.memory import NeuralMem
 
 
-def get_stats_resource(engine: NeuralMem, user_id: str) -> str:
-    """生成 memory://stats/{user_id} Resource 内容"""
+def get_stats_resource(engine: NeuralMem, user_id: str = "default") -> str:
+    """生成 neuralmem://stats Resource 内容"""
     stats = engine.get_stats()
     lines = [
         f"User: {user_id}",

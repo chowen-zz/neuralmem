@@ -1,6 +1,7 @@
 """NeuralMem MCP Server — 连接任意 MCP 客户端（Claude Desktop / Cursor 等）"""
 from __future__ import annotations
 
+import json
 import logging
 
 from mcp.server.fastmcp import FastMCP
@@ -15,8 +16,10 @@ from neuralmem.mcp.tools import (
 
 _logger = logging.getLogger(__name__)
 
-# FastMCP 实例
+# FastMCP 实例 — 导出别名 `mcp` 兼容 CLI entry_point
 server = FastMCP("neuralmem")
+mcp = server  # alias for CLI: `from neuralmem.mcp.server import mcp`
+
 _mem: NeuralMem | None = None
 
 
@@ -25,6 +28,9 @@ def _get_mem() -> NeuralMem:
     if _mem is None:
         _mem = NeuralMem()
     return _mem
+
+
+# ==================== Core CRUD ====================
 
 
 @server.tool()
@@ -61,8 +67,26 @@ def recall(
 
 
 @server.tool()
-def reflect(memory_id: str, new_content: str = "", importance: float = -1) -> str:
-    """Update or reinforce a memory."""
+def reflect(topic: str, limit: int = 10) -> str:
+    """Reflect on a topic — retrieve related memories and synthesize insights."""
+    mem = _get_mem()
+    return mem.reflect(topic=topic, limit=limit)
+
+
+@server.tool()
+def forget(memory_id: str) -> str:
+    """Delete a memory by ID."""
+    mem = _get_mem()
+    mem.forget(memory_id=memory_id)
+    return f"Deleted memory {memory_id[:8]}"
+
+
+# ==================== Update / Conflict ====================
+
+
+@server.tool()
+def update_memory(memory_id: str, new_content: str = "", importance: float = -1) -> str:
+    """Update a memory's content or importance score."""
     mem = _get_mem()
     updates = {}
     if new_content:
@@ -71,25 +95,8 @@ def reflect(memory_id: str, new_content: str = "", importance: float = -1) -> st
         updates["importance"] = importance
     if not updates:
         return "No updates provided."
-    # 直接通过 storage 更新
     mem.storage.update_memory(memory_id, **updates)
     return f"Updated memory {memory_id[:8]}"
-
-
-@server.tool()
-def forget(memory_id: str) -> str:
-    """Delete a memory."""
-    mem = _get_mem()
-    mem.storage.delete_memory(memory_id)
-    return f"Deleted memory {memory_id[:8]}"
-
-
-@server.tool()
-def consolidate(similarity_threshold: float = 0.9) -> str:
-    """Merge similar memories."""
-    mem = _get_mem()
-    result = mem.consolidate(similarity_threshold=similarity_threshold)
-    return f"Consolidation complete: {result}"
 
 
 @server.tool()
@@ -110,25 +117,7 @@ def resolve_conflict(
     return f"No action taken for {memory_id[:8]} (not found or not superseded)."
 
 
-@server.tool()
-def recall_with_explanation(
-    query: str,
-    user_id: str = "",
-    limit: int = 10,
-) -> str:
-    """Recall memories with explanations for why each was retrieved."""
-    mem = _get_mem()
-    kwargs = {}
-    if user_id:
-        kwargs["user_id"] = user_id
-    results = mem.recall(query, limit=limit, **kwargs)
-    return format_search_results(results, show_explanations=True)
-
-
-@server.resource("neuralmem://stats")
-def get_stats() -> str:
-    """Memory statistics."""
-    return get_stats_resource(_get_mem())
+# ==================== Batch Operations ====================
 
 
 @server.tool()
@@ -157,6 +146,33 @@ def remember_batch(
 
 
 @server.tool()
+def forget_batch(
+    ids: str = "",
+    tags: str = "",
+    user_id: str = "",
+    dry_run: bool = False,
+) -> str:
+    """Batch delete memories by IDs or tags."""
+    mem = _get_mem()
+    memory_ids = [i.strip() for i in ids.split(",") if i.strip()] if ids else None
+    tag_list = [t.strip() for t in tags.split(",") if t.strip()] if tags else None
+    kwargs: dict = {}
+    if memory_ids:
+        kwargs["memory_ids"] = memory_ids
+    if tag_list:
+        kwargs["tags"] = tag_list
+    if user_id:
+        kwargs["user_id"] = user_id
+    if dry_run:
+        kwargs["dry_run"] = dry_run
+    result = mem.forget_batch(**kwargs)
+    return json.dumps(result, ensure_ascii=False, indent=2)
+
+
+# ==================== Export / Import ====================
+
+
+@server.tool()
 def export_memories(
     user_id: str = "",
     format: str = "json",
@@ -175,29 +191,42 @@ def export_memories(
 
 
 @server.tool()
-def forget_batch(
-    ids: str = "",
-    tags: str = "",
-    user_id: str = "",
-    dry_run: bool = False,
-) -> str:
-    """Batch delete memories by IDs or tags."""
-    import json
-
+def import_memories(data: str, format: str = "json") -> str:
+    """Import memories from JSON, Markdown, or CSV data."""
     mem = _get_mem()
-    memory_ids = [i.strip() for i in ids.split(",") if i.strip()] if ids else None
-    tag_list = [t.strip() for t in tags.split(",") if t.strip()] if tags else None
-    kwargs: dict = {}
-    if memory_ids:
-        kwargs["memory_ids"] = memory_ids
-    if tag_list:
-        kwargs["tags"] = tag_list
+    imported = mem.import_memories(data, format=format)
+    return f"Imported {len(imported)} memories."
+
+
+# ==================== Lifecycle ====================
+
+
+@server.tool()
+def consolidate(user_id: str = "") -> str:
+    """Run memory consolidation: decay old memories, merge similar, remove forgotten."""
+    mem = _get_mem()
+    kwargs = {}
     if user_id:
         kwargs["user_id"] = user_id
-    if dry_run:
-        kwargs["dry_run"] = dry_run
-    result = mem.forget_batch(**kwargs)
-    return json.dumps(result, ensure_ascii=False, indent=2)
+    result = mem.consolidate(**kwargs)
+    return f"Consolidation complete: {result}"
+
+
+@server.tool()
+def cleanup_expired() -> str:
+    """Remove all memories whose expiration time has passed."""
+    mem = _get_mem()
+    count = mem.cleanup_expired()
+    return f"Cleaned up {count} expired memories."
+
+
+# ==================== Resources ====================
+
+
+@server.resource("neuralmem://stats")
+def get_stats() -> str:
+    """Memory statistics."""
+    return get_stats_resource(_get_mem(), user_id="default")
 
 
 def main():

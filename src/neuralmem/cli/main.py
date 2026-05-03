@@ -1,4 +1,4 @@
-"""NeuralMem CLI — neuralmem mcp / serve / add / search / stats"""
+"""NeuralMem CLI — neuralmem mcp / serve / add / search / stats / import / consolidate"""
 from __future__ import annotations
 
 import argparse
@@ -11,18 +11,20 @@ _logger = logging.getLogger(__name__)
 
 def cmd_mcp(args: argparse.Namespace) -> None:
     """启动 MCP Server（stdio 传输，供 Claude Desktop / Cursor 接入）"""
-    from neuralmem.mcp.server import mcp
+    from neuralmem.mcp.server import server as mcp_server
+
     transport = "streamable-http" if getattr(args, "http", False) else "stdio"
     print(
         "NeuralMem v0.1.0 | Apache-2.0",
         file=sys.stderr,
     )
-    mcp.run(transport=transport)
+    mcp_server.run(transport=transport)
 
 
 def cmd_add(args: argparse.Namespace) -> None:
     """添加一条记忆"""
     from neuralmem.core.memory import NeuralMem
+
     mem = NeuralMem()
     content = " ".join(args.content)
     memories = mem.remember(content, user_id=args.user_id)
@@ -35,6 +37,7 @@ def cmd_add(args: argparse.Namespace) -> None:
 def cmd_search(args: argparse.Namespace) -> None:
     """搜索记忆"""
     from neuralmem.core.memory import NeuralMem
+
     mem = NeuralMem()
     query = " ".join(args.query)
     results = mem.recall(query, user_id=args.user_id, limit=args.limit)
@@ -50,6 +53,7 @@ def cmd_search(args: argparse.Namespace) -> None:
 def cmd_stats(args: argparse.Namespace) -> None:
     """显示记忆库统计"""
     from neuralmem.core.memory import NeuralMem
+
     mem = NeuralMem()
     stats = mem.get_stats()
     print(json.dumps(stats, indent=2, default=str))
@@ -58,6 +62,7 @@ def cmd_stats(args: argparse.Namespace) -> None:
 def cmd_batch_add(args: argparse.Namespace) -> None:
     """批量添加记忆 — 从文件或 stdin 读取，每行一条"""
     from neuralmem.core.memory import NeuralMem
+
     mem = NeuralMem()
 
     if args.file:
@@ -74,6 +79,7 @@ def cmd_batch_add(args: argparse.Namespace) -> None:
     mt = None
     if args.memory_type:
         from neuralmem.core.types import MemoryType
+
         try:
             mt = MemoryType(args.memory_type.lower())
         except ValueError:
@@ -105,6 +111,7 @@ def cmd_batch_add(args: argparse.Namespace) -> None:
 def cmd_export(args: argparse.Namespace) -> None:
     """导出记忆"""
     from neuralmem.core.memory import NeuralMem
+
     mem = NeuralMem()
 
     user_id = args.user_id if args.all_users is False else None
@@ -122,9 +129,33 @@ def cmd_export(args: argparse.Namespace) -> None:
         print(result)
 
 
+def cmd_import(args: argparse.Namespace) -> None:
+    """导入记忆（JSON/Markdown/CSV）"""
+    from neuralmem.core.memory import NeuralMem
+
+    mem = NeuralMem()
+
+    if args.file:
+        with open(args.file, encoding="utf-8") as f:
+            data = f.read()
+    else:
+        print("Reading from stdin (Ctrl+D to finish):", file=sys.stderr)
+        data = sys.stdin.read()
+
+    if not data.strip():
+        print("No data provided.")
+        return
+
+    memories = mem.import_memories(data, format=args.format)
+    print(f"Imported {len(memories)} memories.")
+    for m in memories:
+        print(f"  [{m.get('memory_type', 'episodic')}] {str(m.get('content', ''))[:60]}")
+
+
 def cmd_forget_batch(args: argparse.Namespace) -> None:
     """批量删除记忆"""
     from neuralmem.core.memory import NeuralMem
+
     mem = NeuralMem()
 
     memory_ids = None
@@ -148,6 +179,28 @@ def cmd_forget_batch(args: argparse.Namespace) -> None:
     if result["memory_ids"]:
         for mid in result["memory_ids"]:
             print(f"  {mid[:12]}")
+
+
+def cmd_consolidate(args: argparse.Namespace) -> None:
+    """运行记忆整理：衰减、合并、清理"""
+    from neuralmem.core.memory import NeuralMem
+
+    mem = NeuralMem()
+    result = mem.consolidate(user_id=args.user_id)
+    print("Consolidation complete:")
+    print(f"  Decayed:   {result['decayed']} memories")
+    print(f"  Forgotten: {result['forgotten']} memories")
+    print(f"  Merged:    {result['merged']} memories")
+
+
+def cmd_reflect(args: argparse.Namespace) -> None:
+    """对某个主题进行反思 — 检索相关记忆并综合洞察"""
+    from neuralmem.core.memory import NeuralMem
+
+    mem = NeuralMem()
+    topic = " ".join(args.topic)
+    result = mem.reflect(topic=topic, limit=args.limit)
+    print(result)
 
 
 def main() -> None:
@@ -205,6 +258,13 @@ def main() -> None:
                           help="Include embedding vectors in JSON export")
     p_export.set_defaults(func=cmd_export)
 
+    # import subcommand
+    p_import = sub.add_parser("import", help="Import memories from file or stdin")
+    p_import.add_argument("-f", "--file", default=None, help="Input file path")
+    p_import.add_argument("--format", default="json", choices=["json", "markdown", "csv"],
+                          help="Import format (default: json)")
+    p_import.set_defaults(func=cmd_import)
+
     # forget-batch subcommand
     p_forget_batch = sub.add_parser("forget-batch", help="Batch delete memories")
     p_forget_batch.add_argument("--ids", default=None, help="Comma-separated memory IDs to delete")
@@ -215,6 +275,20 @@ def main() -> None:
     p_forget_batch.add_argument("--dry-run", action="store_true", default=False,
                                 help="Preview what would be deleted without actually deleting")
     p_forget_batch.set_defaults(func=cmd_forget_batch)
+
+    # consolidate subcommand
+    p_consolidate = sub.add_parser(
+        "consolidate", help="Run memory consolidation (decay, merge, cleanup)"
+    )
+    p_consolidate.set_defaults(func=cmd_consolidate)
+
+    # reflect subcommand
+    p_reflect = sub.add_parser(
+        "reflect", help="Reflect on a topic — synthesize insights from memories"
+    )
+    p_reflect.add_argument("topic", nargs="+", help="Topic to reflect on")
+    p_reflect.add_argument("-k", "--limit", type=int, default=10, help="Max memories to consider")
+    p_reflect.set_defaults(func=cmd_reflect)
 
     args = parser.parse_args()
 
