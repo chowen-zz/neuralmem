@@ -1,0 +1,48 @@
+version: "3.9"
+
+services:
+  neuralmem-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: neuralmem-server
+    ports:
+      - "8080:8080"
+    volumes:
+      - neuralmem-data:/data
+    environment:
+      - NEURALMEM_DB_PATH=/data/memory.db
+      - NEURALMEM_EMBEDDING_MODEL=${NEURALMEM_EMBEDDING_MODEL:-all-MiniLM-L6-v2}
+      - NEURALMEM_EMBEDDING_PROVIDER=${NEURALMEM_EMBEDDING_PROVIDER:-local}
+      - NEURALMEM_CONFLICT_LOW=${NEURALMEM_CONFLICT_LOW:-0.75}
+      - NEURALMEM_CONFLICT_HIGH=${NEURALMEM_CONFLICT_HIGH:-0.95}
+      - NEURALMEM_REINFORCE=${NEURALMEM_REINFORCE:-true}
+      - NEURALMEM_REINFORCE_BOOST=${NEURALMEM_REINFORCE_BOOST:-0.05}
+      - NEURALMEM_LLM_EXTRACTION=${NEURALMEM_LLM_EXTRACTION:-false}
+      - NEURALMEM_LLM_EXTRACTOR=${NEURALMEM_LLM_EXTRACTOR:-none}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # Optional: ChromaDB as external vector store
+  # Uncomment if using chroma storage backend
+  # chromadb:
+  #   image: chromadb/chroma:latest
+  #   container_name: neuralmem-chromadb
+  #   ports:
+  #     - "8000:8000"
+  #   volumes:
+  #     - chromadb-data:/chroma/chroma
+  #   environment:
+  #     - ANONYMIZED_TELEMETRY=false
+  #   restart: unless-stopped
+
+volumes:
+  neuralmem-data:
+    driver: local
+  # chromadb-data:
+  #   driver: local

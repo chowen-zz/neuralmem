@@ -14,11 +14,15 @@ def cmd_mcp(args: argparse.Namespace) -> None:
     from neuralmem.mcp.server import server as mcp_server
 
     transport = "streamable-http" if getattr(args, "http", False) else "stdio"
+    port = getattr(args, "port", 8080)
     print(
-        "NeuralMem v0.1.0 | Apache-2.0",
+        f"NeuralMem v0.2.0 | Apache-2.0 | transport={transport} port={port}",
         file=sys.stderr,
     )
-    mcp_server.run(transport=transport)
+    if transport == "streamable-http":
+        mcp_server.run(transport=transport, port=port)
+    else:
+        mcp_server.run(transport=transport)
 
 
 def cmd_add(args: argparse.Namespace) -> None:
@@ -273,11 +277,15 @@ def main() -> None:
     # mcp subcommand
     p_mcp = sub.add_parser("mcp", help="Start MCP server (stdio)")
     p_mcp.add_argument("--http", action="store_true", help="Use HTTP transport")
+    p_mcp.add_argument(
+        "--port", type=int, default=8080, help="Port for HTTP transport (default: 8080)"
+    )
     p_mcp.set_defaults(func=cmd_mcp)
 
     # serve = alias for mcp
     p_serve = sub.add_parser("serve", help="Alias for 'mcp'")
     p_serve.add_argument("--http", action="store_true")
+    p_serve.add_argument("--port", type=int, default=8080)
     p_serve.set_defaults(func=cmd_mcp)
 
     # add subcommand
