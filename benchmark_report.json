@@ -1,0 +1,216 @@
+{
+  "timestamp": "2026-05-03T10:21:51",
+  "total_time_sec": 109.43,
+  "passed": 13,
+  "failed": 0,
+  "results": [
+    {
+      "name": "remember_throughput",
+      "category": "throughput",
+      "passed": true,
+      "duration": 7.06,
+      "metrics": {
+        "records": 1000,
+        "total_sec": 7.04,
+        "qps": 142.1,
+        "latency_p50_ms": 6.2,
+        "latency_p95_ms": 8.37,
+        "latency_p99_ms": 9.91,
+        "latency_max_ms": 577.17
+      },
+      "error": null
+    },
+    {
+      "name": "recall_throughput",
+      "category": "throughput",
+      "passed": true,
+      "duration": 4.21,
+      "metrics": {
+        "queries": 200,
+        "db_size": 500,
+        "qps": 546.2,
+        "latency_p50_ms": 1.58,
+        "latency_p95_ms": 4.71,
+        "latency_p99_ms": 6.26,
+        "latency_max_ms": 7.67
+      },
+      "error": null
+    },
+    {
+      "name": "filtered_recall_latency",
+      "category": "throughput",
+      "passed": true,
+      "duration": 2.04,
+      "metrics": {
+        "unfiltered_p50_ms": 1.81,
+        "unfiltered_p99_ms": 3.8,
+        "user_filtered_p50_ms": 1.67,
+        "user_filtered_p99_ms": 2.17,
+        "tag_filtered_p50_ms": 1.4,
+        "tag_filtered_p99_ms": 2.29
+      },
+      "error": null
+    },
+    {
+      "name": "recall_accuracy",
+      "category": "accuracy",
+      "passed": true,
+      "duration": 1.46,
+      "metrics": {
+        "recall_at_5": 0.05,
+        "recall_at_10": 0.055,
+        "recall_at_5_min": 0.0,
+        "test_queries": 20,
+        "db_size": 200,
+        "recall_grade": "C"
+      },
+      "error": null
+    },
+    {
+      "name": "large_scale_5k",
+      "category": "scale",
+      "passed": true,
+      "duration": 38.23,
+      "metrics": {
+        "inserted": 5000,
+        "stored": 5000,
+        "insert_qps": 132.1,
+        "insert_total_sec": 37.85,
+        "recall_p50_ms": 3.37,
+        "recall_p95_ms": 3.79,
+        "recall_p99_ms": 5.93,
+        "memory_growth_mb": 96.3,
+        "integrity_ok": true
+      },
+      "error": null
+    },
+    {
+      "name": "concurrent_mixed_workload",
+      "category": "concurrency",
+      "passed": true,
+      "duration": 5.73,
+      "metrics": {
+        "total_errors": 0,
+        "write_ops": 1372,
+        "read_ops": 1483,
+        "write_qps": 274.4,
+        "read_qps": 296.6,
+        "write_p50_ms": 13.62,
+        "write_p99_ms": 28.99,
+        "read_p50_ms": 23.11,
+        "read_p99_ms": 47.8,
+        "stored_memories": 1278,
+        "errors_sample": []
+      },
+      "error": null
+    },
+    {
+      "name": "concurrent_high_contention",
+      "category": "concurrency",
+      "passed": true,
+      "duration": 2.44,
+      "metrics": {
+        "threads": 16,
+        "total_ops": 800,
+        "total_errors": 0,
+        "total_sec": 2.41,
+        "global_qps": 331.9,
+        "latency_p50_ms": 42.4,
+        "latency_p95_ms": 74.91,
+        "latency_p99_ms": 171.85,
+        "stored": 751,
+        "error_sample": []
+      },
+      "error": null
+    },
+    {
+      "name": "wal_checkpoint_stress",
+      "category": "wal",
+      "passed": true,
+      "duration": 9.52,
+      "metrics": {
+        "written": 2000,
+        "survived": 2000,
+        "integrity_pct": 100.0,
+        "write_sec": 9.18,
+        "post_checkpoint_p50_ms": 1.99,
+        "post_checkpoint_p99_ms": 4.26
+      },
+      "error": null
+    },
+    {
+      "name": "memory_pressure",
+      "category": "memory",
+      "passed": true,
+      "duration": 25.03,
+      "metrics": {
+        "baseline_mb": 654.3,
+        "after_init_mb": 654.3,
+        "after_3k_write_mb": 654.3,
+        "after_500_read_mb": 654.3,
+        "after_cleanup_mb": 654.3,
+        "write_growth_mb": 0.0,
+        "read_growth_mb": 0.0,
+        "cleanup_recovery_mb": 0.0,
+        "remaining_memories": 3000
+      },
+      "error": null
+    },
+    {
+      "name": "entity_graph_density",
+      "category": "graph",
+      "passed": true,
+      "duration": 3.08,
+      "metrics": {
+        "memories": 500,
+        "entities": 50,
+        "graph_nodes": -1,
+        "graph_edges": -1,
+        "insert_sec": 2.92,
+        "traversal_p50_ms": 1.51,
+        "traversal_p95_ms": 1.8,
+        "traversal_p99_ms": 3.79
+      },
+      "error": null
+    },
+    {
+      "name": "rapid_write_delete_cycle",
+      "category": "resilience",
+      "passed": true,
+      "duration": 3.94,
+      "metrics": {
+        "cycles": 10,
+        "total_errors": 0,
+        "remaining_memories": 1000,
+        "errors_sample": []
+      },
+      "error": null
+    },
+    {
+      "name": "session_layer_stress",
+      "category": "resilience",
+      "passed": true,
+      "duration": 1.22,
+      "metrics": {
+        "sessions": 8,
+        "total_errors": 0,
+        "total_memories": 400,
+        "total_sec": 1.2,
+        "errors_sample": []
+      },
+      "error": null
+    },
+    {
+      "name": "reflect_under_load",
+      "category": "resilience",
+      "passed": true,
+      "duration": 5.47,
+      "metrics": {
+        "memories": 1000,
+        "reflect_sec": 0.01,
+        "report_length": 194
+      },
+      "error": null
+    }
+  ]
+}
