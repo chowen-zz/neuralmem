@@ -65,6 +65,19 @@ class StorageBackend(ABC):
     def record_access(self, memory_id: str) -> None: ...
 
     @abstractmethod
+    def save_history(
+        self,
+        memory_id: str,
+        old_content: str | None,
+        new_content: str,
+        event: str,
+        metadata: dict | None = None,
+    ) -> None: ...
+
+    @abstractmethod
+    def get_history(self, memory_id: str) -> list[dict]: ...
+
+    @abstractmethod
     def batch_record_access(self, memory_ids: list[str]) -> None: ...
 
     @abstractmethod

@@ -57,6 +57,9 @@ class NeuralMemConfig(BaseModel):
     )
     default_search_limit: int = Field(default=10, ge=1, le=100)
     min_score: float = Field(default=0.3, ge=0.0, le=1.0)
+    query_embedding_cache_size: int = Field(
+        default=128, ge=0, description="LRU cache size for query embeddings (0 disables)"
+    )
 
     # LLM 提取配置（Ollama 可选）
     ollama_url: str = Field(

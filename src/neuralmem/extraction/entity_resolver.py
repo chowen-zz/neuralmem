@@ -107,11 +107,12 @@ class EntityResolver:
             if new_e.name.lower() == c.name.lower():
                 return c
 
-        # Stage 2: Embedding 精排
-        new_vec = self._embedder.encode_one(new_e.name)
-        for c in candidates:
-            existing_vec = self._embedder.encode_one(c.name)
-            sim = _cosine(new_vec, existing_vec)
+        # Stage 2: Embedding 精排 — batch encode all candidates at once
+        all_texts = [new_e.name] + [c.name for c in candidates]
+        all_vecs = self._embedder.encode(all_texts)
+        new_vec = all_vecs[0]
+        for i, c in enumerate(candidates):
+            sim = _cosine(new_vec, all_vecs[i + 1])
             if sim >= _EMBEDDING_THRESHOLD:
                 return c
 

@@ -844,6 +844,187 @@ def bench_reflect_under_load():
 
 
 # ==========================================================================
+# Category 9: OPTIMIZATION BENCHMARKS (opt4–opt8 验证)
+# 验证查询缓存、批量编码、图谱批量持久化等优化效果
+# ==========================================================================
+
+
+def bench_query_cache_speedup():
+    """
+    Test query embedding cache: repeated identical queries should skip
+    re-embedding and return from cache.  Measures cold vs warm latency.
+    """
+    tmpdir = tempfile.mkdtemp(prefix="nm_bench_qcache_")
+    try:
+        mem = make_mem(tmpdir, "qcache")
+        # Pre-populate
+        for i in range(200):
+            mem.remember(f"缓存测试 {i}: 主题{i % 20}相关知识")
+
+        query = "缓存主题5相关的知识点"
+
+        # Cold run (first call, must embed)
+        cold_lats = measure_latencies(lambda: mem.recall(query, limit=10), 10)
+
+        # Warm runs (should hit cache)
+        warm_lats = measure_latencies(lambda: mem.recall(query, limit=10), 50)
+
+        cold_p50 = percentile(cold_lats, 50)
+        warm_p50 = percentile(warm_lats, 50)
+        speedup = cold_p50 / warm_p50 if warm_p50 > 0 else 0
+
+        return {
+            "cold_p50_ms": round(cold_p50, 2),
+            "warm_p50_ms": round(warm_p50, 2),
+            "speedup_ratio": round(speedup, 2),
+            "cache_effective": speedup > 1.0,
+        }
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+def bench_entity_batch_encoding():
+    """
+    Test EntityResolver batch encoding: entity resolution on content with
+    many entities should benefit from batched encode() calls.
+    """
+    tmpdir = tempfile.mkdtemp(prefix="nm_bench_ebatch_")
+    try:
+        mem = make_mem(tmpdir, "ebatch")
+        # Create memories with lots of entity-dense content
+        entities = [f"组织{i}" for i in range(30)]
+        for i in range(300):
+            e1, e2, e3 = entities[i % 30], entities[(i + 7) % 30], entities[(i + 13) % 30]
+            mem.remember(f"{e1}与{e2}和{e3}之间存在合作关系，事件{i}")
+
+        # Measure recall that triggers entity resolution
+        lats = measure_latencies(
+            lambda: mem.recall("组织0与组织7的合作关系", limit=10), 50
+        )
+
+        return {
+            "memories": 300,
+            "p50_ms": round(percentile(lats, 50), 2),
+            "p95_ms": round(percentile(lats, 95), 2),
+            "p99_ms": round(percentile(lats, 99), 2),
+        }
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+def bench_graph_batch_persistence():
+    """
+    Test KnowledgeGraph batch() context manager: bulk entity operations
+    should use deferred persistence with a single flush().
+    """
+    tmpdir = tempfile.mkdtemp(prefix="nm_bench_gbatch_")
+    try:
+        mem = make_mem(tmpdir, "gbatch")
+
+        # Phase 1: without batch (each remember triggers graph persist)
+        t0 = time.perf_counter()
+        for i in range(300):
+            mem.remember(f"图谱测试 {i}: 实体{i % 20}和实体{(i + 1) % 20}")
+        unbatched_sec = time.perf_counter() - t0
+
+        # Phase 2: with batch context manager
+        mem2 = make_mem(tmpdir, "gbatch2")
+        t0 = time.perf_counter()
+        with mem2._knowledge_graph.batch():
+            for i in range(300):
+                mem2.remember(f"批量图谱测试 {i}: 实体{i % 20}和实体{(i + 1) % 20}")
+        batched_sec = time.perf_counter() - t0
+
+        speedup = unbatched_sec / batched_sec if batched_sec > 0 else 0
+
+        # Verify graph integrity
+        kg = mem2._knowledge_graph
+        nodes = len(kg.graph.nodes)
+        edges = len(kg.graph.edges)
+
+        return {
+            "unbatched_sec": round(unbatched_sec, 2),
+            "batched_sec": round(batched_sec, 2),
+            "speedup_ratio": round(speedup, 2),
+            "graph_nodes": nodes,
+            "graph_edges": edges,
+            "batch_effective": speedup > 0.9,
+        }
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+def bench_batch_embedding_throughput():
+    """
+    Compare encode_one() vs encode() batch throughput.
+    The batch encode() should be faster per-item than sequential encode_one().
+    """
+    tmpdir = tempfile.mkdtemp(prefix="nm_bench_bemb_")
+    try:
+        mem = make_mem(tmpdir, "bemb")
+        embedder = mem._embedding_provider
+        texts = [f"批量编码测试文本 {i}: 这是一段用于测试编码吞吐量的内容" for i in range(100)]
+
+        # Sequential encode_one
+        t0 = time.perf_counter()
+        for t in texts:
+            embedder.encode_one(t)
+        sequential_sec = time.perf_counter() - t0
+
+        # Batch encode
+        t0 = time.perf_counter()
+        embedder.encode(texts)
+        batch_sec = time.perf_counter() - t0
+
+        speedup = sequential_sec / batch_sec if batch_sec > 0 else 0
+
+        return {
+            "texts": len(texts),
+            "sequential_sec": round(sequential_sec, 3),
+            "batch_sec": round(batch_sec, 3),
+            "speedup_ratio": round(speedup, 2),
+            "batch_effective": speedup > 0.9,
+        }
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+def bench_fts5_keyword_search():
+    """
+    Test FTS5 keyword search performance vs vector search.
+    FTS5 should handle pure keyword queries efficiently.
+    """
+    tmpdir = tempfile.mkdtemp(prefix="nm_bench_fts_")
+    try:
+        mem = make_mem(tmpdir, "fts")
+        # Insert with distinct keywords
+        keywords = ["机器学习", "深度学习", "自然语言处理", "计算机视觉", "强化学习",
+                     "知识图谱", "推荐系统", "数据挖掘", "分布式系统", "量子计算"]
+        for i in range(500):
+            kw = keywords[i % len(keywords)]
+            mem.remember(f"FTS5测试 {i}: {kw}是人工智能的重要分支，应用广泛")
+
+        # Keyword-focused query
+        kw_lats = measure_latencies(
+            lambda: mem.recall("机器学习 应用", limit=10), 50
+        )
+        # Semantic query
+        sem_lats = measure_latencies(
+            lambda: mem.recall("人工智能相关的技术领域", limit=10), 50
+        )
+
+        return {
+            "memories": 500,
+            "keyword_p50_ms": round(percentile(kw_lats, 50), 2),
+            "keyword_p99_ms": round(percentile(kw_lats, 99), 2),
+            "semantic_p50_ms": round(percentile(sem_lats, 50), 2),
+            "semantic_p99_ms": round(percentile(sem_lats, 99), 2),
+        }
+    finally:
+        shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+# ==========================================================================
 # Runner
 # ==========================================================================
 
@@ -869,6 +1050,12 @@ ALL_BENCHMARKS = [
     (bench_rapid_write_delete_cycle, "rapid_write_delete_cycle", "resilience"),
     (bench_session_layer_stress, "session_layer_stress", "resilience"),
     (bench_reflect_under_load, "reflect_under_load", "resilience"),
+    # Category 9: Optimization Benchmarks (opt4–opt8)
+    (bench_query_cache_speedup, "query_cache_speedup", "optimization"),
+    (bench_entity_batch_encoding, "entity_batch_encoding", "optimization"),
+    (bench_graph_batch_persistence, "graph_batch_persistence", "optimization"),
+    (bench_batch_embedding_throughput, "batch_embedding_throughput", "optimization"),
+    (bench_fts5_keyword_search, "fts5_keyword_search", "optimization"),
 ]
 
 

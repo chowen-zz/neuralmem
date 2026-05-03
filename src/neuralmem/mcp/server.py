@@ -86,15 +86,21 @@ def forget(memory_id: str) -> str:
 
 @server.tool()
 def update_memory(memory_id: str, new_content: str = "", importance: float = -1) -> str:
-    """Update a memory's content or importance score. Content updates are version-tracked."""
+    """Update a memory's content or importance score. All updates are version-tracked."""
     mem = _get_mem()
     if new_content:
-        result = mem.update(memory_id, new_content)
+        imp = importance if importance >= 0 else None
+        result = mem.update(memory_id, new_content, importance=imp)
         if result is None:
             return f"Memory {memory_id[:8]} not found."
         return f"Updated memory {memory_id[:8]} (content + history recorded)"
     if importance >= 0:
-        mem.storage.update_memory(memory_id, importance=importance)
+        existing = mem.get(memory_id)
+        if existing is None:
+            return f"Memory {memory_id[:8]} not found."
+        result = mem.update(memory_id, existing.content, importance=importance)
+        if result is None:
+            return f"Memory {memory_id[:8]} not found."
         return f"Updated importance for {memory_id[:8]}"
     return "No updates provided."
 

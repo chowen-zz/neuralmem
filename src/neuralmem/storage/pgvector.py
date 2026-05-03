@@ -72,6 +72,23 @@ CREATE TABLE IF NOT EXISTS graph_snapshots (
 )
 """
 
+_CREATE_MEMORY_HISTORY = """
+CREATE TABLE IF NOT EXISTS memory_history (
+    id SERIAL PRIMARY KEY,
+    memory_id TEXT NOT NULL,
+    old_content TEXT,
+    new_content TEXT NOT NULL,
+    event TEXT NOT NULL DEFAULT 'UPDATE',
+    changed_at TIMESTAMPTZ NOT NULL,
+    metadata JSONB DEFAULT '{}'
+)
+"""
+
+_CREATE_MEMORY_HISTORY_INDEX = """
+CREATE INDEX IF NOT EXISTS idx_memory_history_id
+    ON memory_history(memory_id)
+"""
+
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -216,6 +233,8 @@ class PgVectorStorage(StorageBackend):
             cur.execute(_CREATE_FTS)
             cur.execute(_CREATE_FTS_INDEX)
             cur.execute(_CREATE_GRAPH_SNAPSHOTS)
+            cur.execute(_CREATE_MEMORY_HISTORY)
+            cur.execute(_CREATE_MEMORY_HISTORY_INDEX)
             # Indexes for common query patterns
             cur.execute(
                 "CREATE INDEX IF NOT EXISTS idx_memories_user_id "
@@ -805,6 +824,56 @@ class PgVectorStorage(StorageBackend):
                 self._conn.commit()
         except Exception as e:
             _logger.warning("Failed to save graph snapshot: %s", e)
+
+    def save_history(
+        self,
+        memory_id: str,
+        old_content: str | None,
+        new_content: str,
+        event: str = "UPDATE",
+        metadata: dict | None = None,
+    ) -> None:
+        """Record a memory version change."""
+        with self._lock:
+            self._execute(
+                "INSERT INTO memory_history"
+                " (memory_id, old_content, new_content,"
+                " event, changed_at, metadata)"
+                " VALUES (%s, %s, %s, %s, %s, %s::jsonb)",
+                (
+                    memory_id, old_content, new_content,
+                    event, _now_iso(), json.dumps(metadata or {}),
+                ),
+            )
+            self._conn.commit()
+
+    def get_history(self, memory_id: str) -> list[dict[str, object]]:
+        """Retrieve the version history for a memory."""
+        rows = self._fetchall(
+            "SELECT id, memory_id, old_content,"
+            " new_content, event, changed_at,"
+            " metadata FROM memory_history"
+            " WHERE memory_id = %s ORDER BY id ASC",
+            (memory_id,),
+        )
+        return [
+            {
+                "id": row["id"],
+                "memory_id": row["memory_id"],
+                "old_content": row["old_content"],
+                "new_content": row["new_content"],
+                "event": row["event"],
+                "changed_at": row["changed_at"],
+                "metadata": (
+                    row["metadata"]
+                    if isinstance(row["metadata"], dict)
+                    else json.loads(row["metadata"])
+                    if row["metadata"]
+                    else {}
+                ),
+            }
+            for row in rows
+        ]
 
     def cleanup_expired(self) -> int:
         """Delete memories whose expiration time has passed.

@@ -32,6 +32,8 @@ class KnowledgeGraph:
         # Dirty tracking for incremental persistence
         self._dirty_nodes: set[str] = set()
         self._dirty_edges: set[tuple[str, str]] = set()  # (source_id, target_id)
+        # Batch mode: when True, mutations skip per-call persistence
+        self._defer_persistence: bool = False
         self._load_snapshot()
 
     # ------------------------------------------------------------------
@@ -54,7 +56,8 @@ class KnowledgeGraph:
                 attrs["memory_ids"] = []
                 self._graph.add_node(entity.id, **attrs)
             self._dirty_nodes.add(entity.id)
-        self._save_snapshot_async()
+        if not self._defer_persistence:
+            self._save_snapshot_async()
 
     def get_entity(self, entity_id: str) -> Entity | None:
         """按 ID 查询实体，不存在返回 None"""
@@ -109,7 +112,8 @@ class KnowledgeGraph:
             else:
                 self._graph.add_edge(src, tgt, **attrs)
             self._dirty_edges.add((src, tgt))
-        self._save_snapshot_async()
+        if not self._defer_persistence:
+            self._save_snapshot_async()
 
     # ------------------------------------------------------------------
     # 图遍历
@@ -190,7 +194,8 @@ class KnowledgeGraph:
             node = self._graph.nodes[entity_id]
             node["memory_ids"] = list(set(node.get("memory_ids", []) + [memory_id]))
             self._dirty_nodes.add(entity_id)
-        self._save_snapshot_async()
+        if not self._defer_persistence:
+            self._save_snapshot_async()
 
     # ------------------------------------------------------------------
     # 持久化
@@ -361,6 +366,66 @@ class KnowledgeGraph:
 
         threading.Thread(target=_worker, daemon=True).start()
 
+    def flush(self) -> None:
+        """Synchronously persist all dirty graph data to storage.
+
+        Call this after a batch of mutations (especially inside a batch()
+        context) to persist all accumulated dirty state in one write.
+        If nothing is dirty, this is a no-op.
+        """
+        with self._lock:
+            if not self._dirty_nodes and not self._dirty_edges:
+                return
+            # Collect dirty data under lock
+            dirty_nodes_data: list[dict] = []
+            for nid in list(self._dirty_nodes):
+                if self._graph.has_node(nid):
+                    attrs = dict(self._graph.nodes[nid])
+                    dirty_nodes_data.append({
+                        "id": nid,
+                        "name": attrs.get("name", ""),
+                        "entity_type": attrs.get("entity_type", "unknown"),
+                        "aliases": attrs.get("aliases", []),
+                        "attributes": attrs.get("attributes", {}),
+                        "first_seen": attrs.get("first_seen", ""),
+                        "last_seen": attrs.get("last_seen", ""),
+                        "memory_ids": attrs.get("memory_ids", []),
+                    })
+
+            dirty_edges_data: list[dict] = []
+            for src, tgt in list(self._dirty_edges):
+                if self._graph.has_edge(src, tgt):
+                    attrs = dict(self._graph[src][tgt])
+                    dirty_edges_data.append({
+                        "source_id": src,
+                        "target_id": tgt,
+                        "relation_type": attrs.get("relation_type", ""),
+                        "weight": attrs.get("weight", 1.0),
+                        "timestamp": attrs.get("timestamp", ""),
+                        "metadata": attrs.get("metadata", {}),
+                    })
+
+            try:
+                full_data = nx.node_link_data(self._graph)
+            except (TypeError, ValueError):
+                full_data = None
+
+            self._dirty_nodes.clear()
+            self._dirty_edges.clear()
+
+        # Perform I/O outside the lock
+        if dirty_nodes_data:
+            self._storage.save_graph_nodes_incremental(dirty_nodes_data)
+        if dirty_edges_data:
+            self._storage.save_graph_edges_incremental(dirty_edges_data)
+        if full_data is not None:
+            self._storage.save_graph_snapshot(full_data)
+        _logger.debug(
+            "Graph flush: %d nodes, %d edges",
+            len(dirty_nodes_data),
+            len(dirty_edges_data),
+        )
+
     # ------------------------------------------------------------------
     # 统计
     # ------------------------------------------------------------------
@@ -372,3 +437,32 @@ class KnowledgeGraph:
                 "node_count": self._graph.number_of_nodes(),
                 "edge_count": self._graph.number_of_edges(),
             }
+
+    def batch(self):
+        """Context manager for batch operations — defers persistence until exit.
+
+        Usage:
+            with graph.batch():
+                for entity in entities:
+                    graph.upsert_entity(entity)
+                # flush() is called automatically on exit
+
+        This avoids N redundant _save_snapshot_async() calls and replaces
+        them with a single flush() at the end.
+        """
+        return _BatchContext(self)
+
+
+class _BatchContext:
+    """Helper for KnowledgeGraph.batch() context manager."""
+
+    def __init__(self, graph: KnowledgeGraph) -> None:
+        self._graph = graph
+
+    def __enter__(self) -> _BatchContext:
+        self._graph._defer_persistence = True
+        return self
+
+    def __exit__(self, *exc_info) -> None:
+        self._graph._defer_persistence = False
+        self._graph.flush()

@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from neuralmem.core.memory import NeuralMem
-from neuralmem.core.types import Memory, MemoryType, SearchResult
+from neuralmem.core.types import Memory, MemoryHistoryEntry, MemoryType, SearchResult
 
 
 class AsyncNeuralMem:
@@ -352,6 +352,65 @@ class AsyncNeuralMem:
         return await loop.run_in_executor(
             self._executor,
             lambda: self._mem.resolve_conflict(memory_id, action=action),
+        )
+
+    async def get(self, memory_id: str) -> Memory | None:
+        """Retrieve a single memory by ID (async).
+
+        Delegates to NeuralMem.get() in a thread pool.
+
+        Args:
+            memory_id: The memory identifier.
+
+        Returns:
+            Memory object if found, None otherwise.
+        """
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(
+            self._executor,
+            lambda: self._mem.get(memory_id),
+        )
+
+    async def update(
+        self,
+        memory_id: str,
+        content: str,
+        *,
+        metadata: dict[str, object] | None = None,
+    ) -> Memory | None:
+        """Update a memory's content (async). Records version history automatically.
+
+        Delegates to NeuralMem.update() in a thread pool.
+
+        Args:
+            memory_id: The memory to update.
+            content: New content text.
+            metadata: Optional metadata for the history entry.
+
+        Returns:
+            Updated Memory object, or None if not found.
+        """
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(
+            self._executor,
+            lambda: self._mem.update(memory_id, content, metadata=metadata),
+        )
+
+    async def history(self, memory_id: str) -> list[MemoryHistoryEntry]:
+        """Retrieve the version history for a memory (async).
+
+        Delegates to NeuralMem.history() in a thread pool.
+
+        Args:
+            memory_id: The memory to get history for.
+
+        Returns:
+            List of MemoryHistoryEntry objects, ordered chronologically.
+        """
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(
+            self._executor,
+            lambda: self._mem.history(memory_id),
         )
 
     async def forget_batch(

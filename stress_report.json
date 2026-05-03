@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-05-03T03:36:39.575818+00:00",
+  "timestamp": "2026-05-03T05:18:49.072181+00:00",
   "total": 15,
   "passed": 15,
   "failed": 0,
@@ -9,105 +9,105 @@
       "passed": true,
       "error": null,
       "detail": "remembered=447, stored=467, active=4, vs_hits=20",
-      "duration": 7.613460208987817
+      "duration": 7.404066958930343
     },
     {
       "name": "concurrent_read_write",
       "passed": true,
       "error": null,
       "detail": "threads=8, total_memories=38, errors=0",
-      "duration": 1.0471447499003261
+      "duration": 1.1352058339398354
     },
     {
       "name": "edge_case_inputs",
       "passed": true,
       "error": null,
       "detail": "stored=4, edge_cases_handled=9",
-      "duration": 12.801763750147074
+      "duration": 13.28624533303082
     },
     {
       "name": "delete_and_forget",
       "passed": true,
       "error": null,
       "detail": "before=100, deleted_ok=True",
-      "duration": 0.6371340830810368
+      "duration": 0.6683922919910401
     },
     {
       "name": "export_import_roundtrip",
       "passed": true,
       "error": null,
       "detail": "exported=7421, imported=20, overlap=20",
-      "duration": 0.36150558292865753
+      "duration": 0.33282433287240565
     },
     {
       "name": "session_api_stress",
       "passed": true,
       "error": null,
       "detail": "sessions=5, total_memories=95, errors=0",
-      "duration": 0.5507971250917763
+      "duration": 0.5269619580358267
     },
     {
       "name": "expired_memories",
       "passed": true,
       "error": null,
       "detail": "before=20, cleaned=10, recall_results=1",
-      "duration": 0.13908075005747378
+      "duration": 0.12829754198901355
     },
     {
       "name": "reflect_and_consolidate",
       "passed": true,
       "error": null,
       "detail": "reflect_len=70, consolidate={'decayed': 0, 'forgotten': 0, 'merged': 11}, stats_keys=['total', 'by_type', 'entity_count', 'node_count', 'edge_count']",
-      "duration": 0.19972045812755823
+      "duration": 0.1862954581156373
     },
     {
       "name": "recall_with_filters",
       "passed": true,
       "error": null,
       "detail": "user_filter=0, tag_filter=2, type_filter=2, time_filter=2, combined=0",
-      "duration": 0.12756162486039102
+      "duration": 0.11042199982330203
     },
     {
       "name": "importance_reinforcement",
       "passed": true,
       "error": null,
       "detail": "initial=0.70, final=1.00",
-      "duration": 0.12962549994699657
+      "duration": 0.1050142499152571
     },
     {
       "name": "large_dataset_stability",
       "passed": true,
       "error": null,
-      "detail": "stored=583, write_time=9.9s, recall_results=0, read_time=0.2s, stats={'total': 583, 'by_type': {'semantic': 583}, 'entity_count': 0, 'node_count': 0, 'edge_count': 0}",
-      "duration": 10.073089709039778
+      "detail": "stored=583, write_time=9.4s, recall_results=0, read_time=0.1s, stats={'total': 583, 'by_type': {'semantic': 583}, 'entity_count': 0, 'node_count': 0, 'edge_count': 0}",
+      "duration": 9.52626262488775
     },
     {
       "name": "context_manager",
       "passed": true,
       "error": null,
       "detail": "initial_recall=1, reopened_recall=1",
-      "duration": 0.3299949581269175
+      "duration": 0.2737106669228524
     },
     {
       "name": "resolve_conflict",
       "passed": true,
       "error": null,
       "detail": "supersede_ok=True, reactivate_ok=True, delete_ok=False",
-      "duration": 0.11561904195696115
+      "duration": 0.10194399999454618
     },
     {
       "name": "import_edge_cases",
       "passed": true,
       "error": null,
       "detail": "all_edge_cases_handled=8",
-      "duration": 0.08067683316767216
+      "duration": 0.07574600004591048
     },
     {
       "name": "vec0_consistency",
       "passed": true,
       "error": null,
       "detail": "vec0_sync_ok=True",
-      "duration": 0.18284895783290267
+      "duration": 0.10802787519060075
     }
   ]
 }

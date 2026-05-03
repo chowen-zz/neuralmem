@@ -4,6 +4,8 @@ from __future__ import annotations
 import concurrent.futures
 import logging
 import math as _math
+import threading
+from collections.abc import Sequence
 
 from neuralmem.core.config import NeuralMemConfig
 from neuralmem.core.protocols import EmbedderProtocol, GraphStoreProtocol, StorageProtocol
@@ -20,6 +22,63 @@ _logger = logging.getLogger(__name__)
 
 def _sigmoid(x: float) -> float:
     return 1.0 / (1.0 + _math.exp(-x))
+
+
+class _CachingEmbedder:
+    """Thread-safe LRU-caching wrapper around any EmbedderProtocol implementation.
+
+    Intercepts ``encode_one`` calls and caches results so that repeated (or
+    concurrent) calls with the same query text only invoke the underlying
+    embedder once.  ``encode`` and ``dimension`` are delegated unchanged.
+    """
+
+    def __init__(self, inner: EmbedderProtocol, maxsize: int = 128) -> None:
+        self._inner = inner
+        self._lock = threading.Lock()
+        # Manual LRU cache (functools.lru_cache works but we want explicit
+        # thread-safety *and* the ability to expose a cache-clear API).
+        self._cache: dict[str, list[float]] = {}
+        self._maxsize = maxsize
+
+    # -- EmbedderProtocol interface ------------------------------------------------
+
+    @property
+    def dimension(self) -> int:
+        return self._inner.dimension
+
+    def encode(self, texts: Sequence[str]) -> list[list[float]]:
+        """Delegate batch encoding — no caching (batch sizes vary)."""
+        return self._inner.encode(texts)
+
+    def encode_one(self, text: str) -> list[float]:
+        """Return cached embedding or compute + cache."""
+        with self._lock:
+            if text in self._cache:
+                # Move to end (most-recently used) — dict preserves insertion
+                # order in Python 3.7+; re-insert to mark as MRU.
+                vec = self._cache.pop(text)
+                self._cache[text] = vec
+                return vec
+
+        # Miss — compute outside lock to avoid holding it during I/O.
+        vec = self._inner.encode_one(text)
+
+        with self._lock:
+            self._cache[text] = vec
+            # Evict LRU entries if over capacity.
+            while len(self._cache) > self._maxsize:
+                self._cache.pop(next(iter(self._cache)))
+        return vec
+
+    def cache_clear(self) -> None:
+        """Drop all cached embeddings."""
+        with self._lock:
+            self._cache.clear()
+
+    @property
+    def cache_info(self) -> tuple[int, int]:
+        """Return ``(current_size, maxsize)``."""
+        return len(self._cache), self._maxsize
 
 
 class RetrievalEngine:
@@ -45,15 +104,38 @@ class RetrievalEngine:
         self._config = config
         self._merger = RRFMerger(k=60)
         self._reranker = CrossEncoderReranker()
-        self._semantic = SemanticStrategy(storage, embedder)
+
+        # Wrap the embedder with an LRU cache so that repeated (or concurrent)
+        # encode_one calls for the same query text skip the actual model/API.
+        cache_size = config.query_embedding_cache_size
+        if cache_size > 0:
+            cached_embedder: EmbedderProtocol = _CachingEmbedder(embedder, maxsize=cache_size)
+        else:
+            cached_embedder = embedder
+
+        self._cached_embedder = cached_embedder
+        self._semantic = SemanticStrategy(storage, cached_embedder)
         self._keyword = KeywordStrategy(storage)
         self._graph_strategy = GraphStrategy(graph)
-        self._temporal = TemporalStrategy(storage, embedder)
+        self._temporal = TemporalStrategy(storage, cached_embedder)
         self._executor = concurrent.futures.ThreadPoolExecutor(max_workers=4)
 
     def close(self) -> None:
-        """Shut down the internal thread pool executor."""
+        """Shut down the internal thread pool executor and clear embedding cache."""
         self._executor.shutdown(wait=False)
+        self.clear_embedding_cache()
+
+    def clear_embedding_cache(self) -> None:
+        """Drop all cached query embeddings."""
+        if isinstance(self._cached_embedder, _CachingEmbedder):
+            self._cached_embedder.cache_clear()
+
+    @property
+    def embedding_cache_info(self) -> tuple[int, int] | None:
+        """Return ``(current_size, maxsize)`` for the embedding cache, or None if disabled."""
+        if isinstance(self._cached_embedder, _CachingEmbedder):
+            return self._cached_embedder.cache_info
+        return None
 
     def __del__(self) -> None:
         self.close()

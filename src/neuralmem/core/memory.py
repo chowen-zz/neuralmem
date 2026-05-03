@@ -855,14 +855,16 @@ class NeuralMem:
         memory_id: str,
         content: str,
         *,
+        importance: float | None = None,
         metadata: dict[str, object] | None = None,
     ) -> Memory | None:
         """
-        Update a memory's content. Records version history automatically.
+        Update a memory's content and/or importance. Records version history automatically.
 
         Args:
             memory_id: The memory to update.
             content: New content text.
+            importance: Optional new importance score (0.0-1.0).
             metadata: Optional metadata for the history entry.
 
         Returns:
@@ -874,30 +876,42 @@ class NeuralMem:
             return None
 
         old_content = existing.content
-        if old_content == content:
-            return existing  # No change
+        content_changed = old_content != content
 
-        # Re-embed the new content
-        vector = self.embedding.encode_one(content)
-        self.storage.update_memory(memory_id, content=content, embedding=vector)
+        # Build kwargs for storage update
+        storage_kwargs: dict[str, object] = {}
+        if content_changed:
+            vector = self.embedding.encode_one(content)
+            storage_kwargs["content"] = content
+            storage_kwargs["embedding"] = vector
+        if importance is not None:
+            storage_kwargs["importance"] = importance
+
+        if not storage_kwargs:
+            return existing  # Nothing to update
+
+        self.storage.update_memory(memory_id, **storage_kwargs)
 
         # Record history
+        event = "UPDATE"
+        history_new = content if content_changed else old_content
         self.storage.save_history(
-            memory_id, old_content, content, event="UPDATE", metadata=metadata,
+            memory_id, old_content, history_new, event=event, metadata=metadata,
         )
 
-        # Update graph entities if needed
-        try:
-            items = self.extractor.extract(content)
-            for item in items:
-                resolved = self.entity_resolver.resolve(
-                    item.entities, existing_entities=self.graph.get_entities(),
-                )
-                for entity in resolved:
-                    self.graph.upsert_entity(entity)
-                    self.graph.link_memory_to_entity(memory_id, entity.id)
-        except Exception:
-            _logger.debug("Graph update skipped for memory %s", memory_id[:8])
+        # Update graph entities if content changed
+        if content_changed:
+            try:
+                items = self.extractor.extract(content)
+                for item in items:
+                    resolved = self.entity_resolver.resolve(
+                        item.entities, existing_entities=self.graph.get_entities(),
+                    )
+                    for entity in resolved:
+                        self.graph.upsert_entity(entity)
+                        self.graph.link_memory_to_entity(memory_id, entity.id)
+            except Exception:
+                _logger.debug("Graph update skipped for memory %s", memory_id[:8])
 
         updated = self.storage.get_memory(memory_id)
         _logger.debug("Updated memory %s", memory_id[:8])
