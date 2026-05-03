@@ -167,3 +167,16 @@ class SearchQuery(BaseModel):
     time_range: tuple[datetime, datetime] | None = None
     limit: int = Field(default=10, ge=1, le=100)
     min_score: float = Field(default=0.3, ge=0.0, le=1.0)
+
+
+class MemoryHistoryEntry(BaseModel):
+    """A single version history entry for a memory."""
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    id: int
+    memory_id: str
+    old_content: str | None = None
+    new_content: str
+    event: str  # 'CREATE', 'UPDATE', 'DELETE'
+    changed_at: datetime
+    metadata: dict[str, Any] = Field(default_factory=dict)

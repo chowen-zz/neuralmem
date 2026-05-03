@@ -27,7 +27,8 @@ _TECH_KEYWORDS = {
 
 class ExtractedItem:
     def __init__(self, content: str, memory_type: MemoryType, entities: list[Entity],
-                 relations: list[Relation], tags: list[str], importance: float):
+                 relations: list[Relation], tags: list[str], importance: float,
+                 event: str = "ADD"):
         self.content = content
         self.memory_type = memory_type
         self.entities = entities
@@ -35,6 +36,7 @@ class ExtractedItem:
         self.relations = relations
         self.tags = tags
         self.importance = importance
+        self.event = event
 
 
 class MemoryExtractor:

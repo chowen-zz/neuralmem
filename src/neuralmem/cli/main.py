@@ -203,6 +203,62 @@ def cmd_reflect(args: argparse.Namespace) -> None:
     print(result)
 
 
+def cmd_get(args: argparse.Namespace) -> None:
+    """Get a memory by ID."""
+    from neuralmem.core.memory import NeuralMem
+
+    mem = NeuralMem()
+    memory = mem.get(args.memory_id)
+    if memory is None:
+        print(f"Memory {args.memory_id[:8]} not found.")
+        return
+    print(f"ID:         {memory.id}")
+    print(f"Content:    {memory.content}")
+    print(f"Type:       {memory.memory_type.value}")
+    print(f"Importance: {memory.importance}")
+    print(f"Active:     {memory.is_active}")
+    print(f"Created:    {memory.created_at}")
+    print(f"Updated:    {memory.updated_at}")
+    print(f"Tags:       {list(memory.tags)}")
+
+
+def cmd_update(args: argparse.Namespace) -> None:
+    """Update a memory's content."""
+    from neuralmem.core.memory import NeuralMem
+
+    mem = NeuralMem()
+    new_content = " ".join(args.content)
+    result = mem.update(args.memory_id, new_content)
+    if result is None:
+        print(f"Memory {args.memory_id[:8]} not found.")
+        return
+    print(f"Updated memory {result.id[:8]}")
+    print(f"New content: {result.content}")
+
+
+def cmd_history(args: argparse.Namespace) -> None:
+    """Show version history for a memory."""
+    from neuralmem.core.memory import NeuralMem
+
+    mem = NeuralMem()
+    entries = mem.history(args.memory_id)
+    if not entries:
+        print(f"No history found for {args.memory_id[:8]}.")
+        return
+    print(f"History for {args.memory_id[:8]} ({len(entries)} entries):")
+    for e in entries:
+        ts = e.changed_at.strftime("%Y-%m-%d %H:%M") if hasattr(
+            e.changed_at, "strftime"
+        ) else str(e.changed_at)
+        old = (e.old_content[:50] + "..."
+               if e.old_content and len(e.old_content) > 50
+               else e.old_content or "-")
+        new = (e.new_content[:50] + "..."
+               if len(e.new_content) > 50
+               else e.new_content)
+        print(f"  [{ts}] {e.event}: {old} -> {new}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="neuralmem",
@@ -289,6 +345,22 @@ def main() -> None:
     p_reflect.add_argument("topic", nargs="+", help="Topic to reflect on")
     p_reflect.add_argument("-k", "--limit", type=int, default=10, help="Max memories to consider")
     p_reflect.set_defaults(func=cmd_reflect)
+
+    # get subcommand
+    p_get = sub.add_parser("get", help="Get a memory by ID")
+    p_get.add_argument("memory_id", help="Memory ID")
+    p_get.set_defaults(func=cmd_get)
+
+    # update subcommand
+    p_update = sub.add_parser("update", help="Update a memory's content")
+    p_update.add_argument("memory_id", help="Memory ID")
+    p_update.add_argument("content", nargs="+", help="New content text")
+    p_update.set_defaults(func=cmd_update)
+
+    # history subcommand
+    p_history = sub.add_parser("history", help="Show version history for a memory")
+    p_history.add_argument("memory_id", help="Memory ID")
+    p_history.set_defaults(func=cmd_history)
 
     args = parser.parse_args()
 

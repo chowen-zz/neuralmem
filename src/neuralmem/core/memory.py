@@ -15,6 +15,7 @@ from neuralmem.core.metrics import MetricsCollector
 from neuralmem.core.types import (
     ExportFormat,
     Memory,
+    MemoryHistoryEntry,
     MemoryScope,
     MemoryType,
     SearchQuery,
@@ -93,9 +94,25 @@ class NeuralMem:
         importance: float | None = None,
         expires_at: datetime | None = None,
         expires_in: timedelta | None = None,
+        infer: bool = True,
+        metadata: dict[str, object] | None = None,
     ) -> list[Memory]:
         """
         存储记忆。自动执行：提取实体 → 生成 Embedding → 去重检查 → 持久化 → 更新图谱
+
+        Args:
+            content: Text content to remember.
+            user_id: User identifier for memory scoping.
+            agent_id: Agent identifier.
+            session_id: Session identifier.
+            memory_type: Override memory type (auto-inferred if None).
+            tags: Optional tags.
+            importance: Override importance score.
+            expires_at: Absolute expiration time (UTC).
+            expires_in: Relative expiration (e.g. timedelta(hours=1)).
+            infer: If True (default), use LLM/rules to extract facts.
+                   If False, store verbatim without extraction.
+            metadata: Optional metadata dict stored with the memory.
 
         Returns:
             提取并存储的记忆列表（一段内容可提取多条记忆）
@@ -112,6 +129,8 @@ class NeuralMem:
                 importance=importance,
                 expires_at=expires_at,
                 expires_in=expires_in,
+                infer=infer,
+                metadata=metadata,
             )
 
     def _remember_impl(
@@ -126,6 +145,8 @@ class NeuralMem:
         importance: float | None = None,
         expires_at: datetime | None = None,
         expires_in: timedelta | None = None,
+        infer: bool = True,
+        metadata: dict[str, object] | None = None,
     ) -> list[Memory]:
         # 前置校验：拒绝空内容/纯空白
         if not content or not content.strip():
@@ -136,6 +157,20 @@ class NeuralMem:
         if resolved_expires_at is None and expires_in is not None:
             from datetime import timezone
             resolved_expires_at = datetime.now(timezone.utc) + expires_in
+
+        # infer=False: store verbatim without extraction (mem0-compatible)
+        if not infer:
+            return self._remember_verbatim(
+                content,
+                user_id=user_id,
+                agent_id=agent_id,
+                session_id=session_id,
+                memory_type=memory_type,
+                tags=tags,
+                importance=importance,
+                expires_at=resolved_expires_at,
+                metadata=metadata,
+            )
 
         try:
             existing_entities = self.graph.get_entities(user_id=user_id)
@@ -767,6 +802,137 @@ class NeuralMem:
         storage_stats = self.storage.get_stats()
         graph_stats = self.graph.get_stats()
         return {**storage_stats, **graph_stats}
+
+    def _remember_verbatim(
+        self,
+        content: str,
+        *,
+        user_id: str | None = None,
+        agent_id: str | None = None,
+        session_id: str | None = None,
+        memory_type: MemoryType | None = None,
+        tags: list[str] | None = None,
+        importance: float | None = None,
+        expires_at: datetime | None = None,
+        metadata: dict[str, object] | None = None,
+    ) -> list[Memory]:
+        """Store content verbatim without extraction (infer=False mode)."""
+        from neuralmem.core.types import _generate_ulid
+        vector = self.embedding.encode_one(content)
+        memory = Memory(
+            id=_generate_ulid(),
+            content=content,
+            memory_type=memory_type or MemoryType.EPISODIC,
+            scope=MemoryScope.USER if user_id else MemoryScope.SESSION,
+            user_id=user_id,
+            agent_id=agent_id,
+            session_id=session_id,
+            tags=tuple(tags or ()),
+            importance=importance or 0.5,
+            embedding=vector,
+            expires_at=expires_at,
+        )
+        self.storage.save_memory(memory)
+        self.storage.save_history(memory.id, None, content, event="CREATE", metadata=metadata)
+        _logger.debug("Stored verbatim memory %s (%d chars)", memory.id[:8], len(content))
+        return [memory]
+
+    def get(self, memory_id: str) -> Memory | None:
+        """
+        Retrieve a single memory by ID.
+
+        Args:
+            memory_id: The memory identifier.
+
+        Returns:
+            Memory object if found, None otherwise.
+        """
+        self.metrics.record_counter("neuralmem.get.calls")
+        return self.storage.get_memory(memory_id)
+
+    def update(
+        self,
+        memory_id: str,
+        content: str,
+        *,
+        metadata: dict[str, object] | None = None,
+    ) -> Memory | None:
+        """
+        Update a memory's content. Records version history automatically.
+
+        Args:
+            memory_id: The memory to update.
+            content: New content text.
+            metadata: Optional metadata for the history entry.
+
+        Returns:
+            Updated Memory object, or None if not found.
+        """
+        self.metrics.record_counter("neuralmem.update.calls")
+        existing = self.storage.get_memory(memory_id)
+        if existing is None:
+            return None
+
+        old_content = existing.content
+        if old_content == content:
+            return existing  # No change
+
+        # Re-embed the new content
+        vector = self.embedding.encode_one(content)
+        self.storage.update_memory(memory_id, content=content, embedding=vector)
+
+        # Record history
+        self.storage.save_history(
+            memory_id, old_content, content, event="UPDATE", metadata=metadata,
+        )
+
+        # Update graph entities if needed
+        try:
+            items = self.extractor.extract(content)
+            for item in items:
+                resolved = self.entity_resolver.resolve(
+                    item.entities, existing_entities=self.graph.get_entities(),
+                )
+                for entity in resolved:
+                    self.graph.upsert_entity(entity)
+                    self.graph.link_memory_to_entity(memory_id, entity.id)
+        except Exception:
+            _logger.debug("Graph update skipped for memory %s", memory_id[:8])
+
+        updated = self.storage.get_memory(memory_id)
+        _logger.debug("Updated memory %s", memory_id[:8])
+        return updated
+
+    def history(self, memory_id: str) -> list[MemoryHistoryEntry]:
+        """
+        Retrieve the version history for a memory.
+
+        Args:
+            memory_id: The memory to get history for.
+
+        Returns:
+            List of MemoryHistoryEntry objects, ordered chronologically.
+        """
+        self.metrics.record_counter("neuralmem.history.calls")
+        raw = self.storage.get_history(memory_id)
+        entries: list[MemoryHistoryEntry] = []
+        for row in raw:
+            try:
+                changed_at = row["changed_at"]
+                if isinstance(changed_at, str):
+                    changed_at = datetime.fromisoformat(changed_at)
+                entries.append(MemoryHistoryEntry(
+                    id=row["id"],
+                    memory_id=row["memory_id"],
+                    old_content=row.get("old_content"),
+                    new_content=row["new_content"],
+                    event=row["event"],
+                    changed_at=changed_at,
+                    metadata=row.get("metadata", {}),
+                ))
+            except Exception as e:
+                _logger.warning("Skipping malformed history entry: %s", e)
+        return entries
 
     # ==================== 同步便捷 API ====================
 

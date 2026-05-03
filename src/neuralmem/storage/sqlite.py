@@ -88,6 +88,18 @@ CREATE TABLE IF NOT EXISTS graph_edges (
 )
 """
 
+_CREATE_MEMORY_HISTORY = """
+CREATE TABLE IF NOT EXISTS memory_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    memory_id TEXT NOT NULL,
+    old_content TEXT,
+    new_content TEXT NOT NULL,
+    event TEXT NOT NULL DEFAULT 'UPDATE',
+    changed_at TEXT NOT NULL,
+    metadata TEXT DEFAULT '{}'
+)
+"""
+
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -220,6 +232,10 @@ class SQLiteStorage(StorageBackend):
             )
             self._conn.execute(
                 'CREATE INDEX IF NOT EXISTS idx_memories_session_id ON memories(session_id)'
+            )
+            self._conn.execute(_CREATE_MEMORY_HISTORY)
+            self._conn.execute(
+                'CREATE INDEX IF NOT EXISTS idx_memory_history_id ON memory_history(memory_id)'
             )
             self._conn.commit()
 
@@ -1036,3 +1052,49 @@ class SQLiteStorage(StorageBackend):
             results[idx] = similar
 
         return results
+
+    def save_history(
+        self,
+        memory_id: str,
+        old_content: str | None,
+        new_content: str,
+        event: str = 'UPDATE',
+        metadata: dict | None = None,
+    ) -> None:
+        """Record a memory version change."""
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO memory_history"
+                " (memory_id, old_content, new_content,"
+                " event, changed_at, metadata)"
+                " VALUES (?, ?, ?, ?, ?, ?)",
+                (
+                    memory_id, old_content, new_content,
+                    event, _now_iso(), json.dumps(metadata or {}),
+                ),
+            )
+            self._conn.commit()
+
+    def get_history(self, memory_id: str) -> list[dict[str, object]]:
+        """Retrieve the version history for a memory."""
+        with self._lock:
+            cur = self._conn.execute(
+                "SELECT id, memory_id, old_content,"
+                " new_content, event, changed_at,"
+                " metadata FROM memory_history"
+                " WHERE memory_id = ? ORDER BY id ASC",
+                (memory_id,),
+            )
+            rows = cur.fetchall()
+        return [
+            {
+                "id": row["id"],
+                "memory_id": row["memory_id"],
+                "old_content": row["old_content"],
+                "new_content": row["new_content"],
+                "event": row["event"],
+                "changed_at": row["changed_at"],
+                "metadata": json.loads(row["metadata"]) if row["metadata"] else {},
+            }
+            for row in rows
+        ]

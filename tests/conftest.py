@@ -106,3 +106,14 @@ def mock_embedder():
             return self.encode([text])[0]
 
     return MockEmbedder()
+
+
+@pytest.fixture
+def mem_with_mock(tmp_db_path, mock_embedder):
+    """NeuralMem 实例，使用 mock embedder 和规则提取器（不下载模型）"""
+    from neuralmem.core.memory import NeuralMem
+
+    config = NeuralMemConfig(db_path=tmp_db_path, embedding_dim=4)
+    mem = NeuralMem(config=config)
+    mem._embedding_provider = mock_embedder
+    return mem

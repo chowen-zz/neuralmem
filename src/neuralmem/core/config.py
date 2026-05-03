@@ -116,6 +116,18 @@ class NeuralMemConfig(BaseModel):
     anthropic_api_key: str | None = Field(default=None, repr=False)
     anthropic_model: str = Field(default="claude-haiku-4-5-20251001")
 
+    # Custom extraction prompt
+    custom_extraction_prompt: str | None = Field(
+        default=None,
+        description="自定义提取提示词（覆盖内置提示）",
+    )
+
+    # LLM-driven conflict resolution (opt-in)
+    enable_llm_conflict_resolution: bool = Field(
+        default=False,
+        description="是否启用 LLM 驱动的冲突解决",
+    )
+
     @model_validator(mode="after")
     def _backcompat_llm_extraction(self) -> NeuralMemConfig:
         if self.enable_llm_extraction and self.llm_extractor == "none":
@@ -171,6 +183,10 @@ class NeuralMemConfig(BaseModel):
             anthropic_api_key=os.getenv("NEURALMEM_ANTHROPIC_API_KEY"),
             anthropic_model=os.getenv(
                 "NEURALMEM_ANTHROPIC_MODEL", "claude-haiku-4-5-20251001"
+            ),
+            custom_extraction_prompt=os.getenv("NEURALMEM_CUSTOM_EXTRACTION_PROMPT"),
+            enable_llm_conflict_resolution=(
+                os.getenv("NEURALMEM_LLM_CONFLICT_RESOLUTION", "false").lower() == "true"
             ),
         )
 

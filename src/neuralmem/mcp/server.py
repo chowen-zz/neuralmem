@@ -86,17 +86,53 @@ def forget(memory_id: str) -> str:
 
 @server.tool()
 def update_memory(memory_id: str, new_content: str = "", importance: float = -1) -> str:
-    """Update a memory's content or importance score."""
+    """Update a memory's content or importance score. Content updates are version-tracked."""
     mem = _get_mem()
-    updates = {}
     if new_content:
-        updates["content"] = new_content
+        result = mem.update(memory_id, new_content)
+        if result is None:
+            return f"Memory {memory_id[:8]} not found."
+        return f"Updated memory {memory_id[:8]} (content + history recorded)"
     if importance >= 0:
-        updates["importance"] = importance
-    if not updates:
-        return "No updates provided."
-    mem.storage.update_memory(memory_id, **updates)
-    return f"Updated memory {memory_id[:8]}"
+        mem.storage.update_memory(memory_id, importance=importance)
+        return f"Updated importance for {memory_id[:8]}"
+    return "No updates provided."
+
+
+@server.tool()
+def get_memory(memory_id: str) -> str:
+    """Retrieve a single memory by its ID."""
+    mem = _get_mem()
+    memory = mem.get(memory_id)
+    if memory is None:
+        return f"Memory {memory_id[:8]} not found."
+    return (
+        f"ID: {memory.id}\n"
+        f"Content: {memory.content}\n"
+        f"Type: {memory.memory_type.value}\n"
+        f"Importance: {memory.importance}\n"
+        f"Active: {memory.is_active}\n"
+        f"Created: {memory.created_at}\n"
+        f"Tags: {list(memory.tags)}"
+    )
+
+
+@server.tool()
+def memory_history(memory_id: str) -> str:
+    """Retrieve the version history for a memory."""
+    mem = _get_mem()
+    entries = mem.history(memory_id)
+    if not entries:
+        return f"No history found for {memory_id[:8]}."
+    lines = []
+    for e in entries:
+        ts = (
+            e.changed_at.strftime("%Y-%m-%d %H:%M")
+            if hasattr(e.changed_at, "strftime")
+            else str(e.changed_at)
+        )
+        lines.append(f"[{ts}] {e.event}: {e.new_content[:80]}")
+    return f"History for {memory_id[:8]} ({len(entries)} entries):\n" + "\n".join(lines)
 
 
 @server.tool()
