@@ -33,6 +33,13 @@ reranker  = ["sentence-transformers>=3.0"]
 cohere    = ["cohere>=5.0"]
 gemini    = ["google-generativeai>=0.8"]
 anthropic = ["anthropic>=0.30"]
+chroma   = ["chromadb>=0.4"]
+qdrant   = ["qdrant-client>=1.7"]
+faiss    = ["faiss-cpu>=1.7"]
+redis    = ["redis>=5.0"]
+all-vector-stores = [
+    "neuralmem[chroma,qdrant,faiss,redis]",
+]
 dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.23",
@@ -41,7 +48,9 @@ dev = [
     "mypy>=1.10",
     "httpx>=0.27",
 ]
-all = ["neuralmem[server,openai,ollama,reranker,cohere,gemini,anthropic]"]
+all = [
+    "neuralmem[server,openai,ollama,reranker,cohere,gemini,anthropic,all-vector-stores]",
+]
 
 [project.scripts]
 neuralmem = "neuralmem.cli.main:main"

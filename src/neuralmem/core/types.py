@@ -45,9 +45,11 @@ def _generate_short_ulid() -> str:
 
 
 class MemoryType(str, Enum):
-    """四类认知记忆模型"""
+    """认知记忆类型体系"""
+    FACT = "fact"                # 客观事实陈述
+    PREFERENCE = "preference"    # 用户偏好/喜好
     EPISODIC = "episodic"        # 事件/交互记录
-    SEMANTIC = "semantic"        # 事实/偏好/知识
+    SEMANTIC = "semantic"        # 事实/知识（通用）
     PROCEDURAL = "procedural"    # 流程/SOP/最佳实践
     WORKING = "working"          # 当前会话上下文
 

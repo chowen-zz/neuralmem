@@ -441,6 +441,94 @@ class NeuralMem:
 
         return all_memories
 
+    def remember_conversation(
+        self,
+        messages: list[dict[str, str]],
+        *,
+        user_id: str | None = None,
+        agent_id: str | None = None,
+        session_id: str | None = None,
+        auto_merge: bool = True,
+        tags: list[str] | None = None,
+    ) -> list[Memory]:
+        """Extract and store memories from a multi-turn conversation.
+
+        Uses ConversationExtractor to identify factual statements,
+        preferences, procedures, and episodic memories from dialogue,
+        then stores them with optional deduplication via MemoryMerger.
+
+        Args:
+            messages: List of message dicts with 'role' and 'content'.
+                Each dict must have 'role' ('user'/'assistant') and
+                'content' (str) keys.
+            user_id: User identifier for memory scoping.
+            agent_id: Agent identifier.
+            session_id: Session identifier.
+            auto_merge: If True (default), detect and merge duplicates
+                using MemoryMerger (threshold=0.90).
+            tags: Optional tags to apply to all extracted memories.
+
+        Returns:
+            List of stored Memory objects.
+        """
+        from neuralmem.extraction.conversation_extractor import (
+            ConversationExtractor,
+        )
+        from neuralmem.extraction.merger import MemoryMerger
+
+        self.metrics.record_counter(
+            "neuralmem.remember_conversation.calls"
+        )
+
+        if not messages:
+            return []
+
+        extractor = ConversationExtractor()
+        extracted = extractor.extract(messages)
+
+        if not extracted:
+            return []
+
+        # Convert ExtractedMemory -> Memory and store
+        all_memories: list[Memory] = []
+
+        for item in extracted:
+            combined_tags = tuple(
+                dict.fromkeys(list(item.tags) + (tags or []))
+            )
+
+            stored = self.remember(
+                item.content,
+                user_id=user_id,
+                agent_id=agent_id,
+                session_id=session_id,
+                memory_type=item.memory_type,
+                tags=list(combined_tags),
+                importance=item.confidence,
+                infer=True,
+                metadata=item.metadata,
+            )
+            all_memories.extend(stored)
+
+        # Auto-merge duplicates if requested
+        if auto_merge and len(all_memories) > 1:
+            merger = MemoryMerger()
+            merge_results = merger.merge_batch(
+                all_memories, existing_memories=[]
+            )
+            merged_memories: list[Memory] = []
+            for result in merge_results:
+                if result.was_merged:
+                    # The duplicate was already superseded by
+                    # the remember() dedup logic. We just need
+                    # to update if merge found a better version.
+                    merged_memories.append(result.merged_memory)
+                else:
+                    merged_memories.append(result.merged_memory)
+            all_memories = merged_memories
+
+        return all_memories
+
     def export_memories(
         self,
         *,

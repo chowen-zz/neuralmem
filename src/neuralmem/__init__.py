@@ -1,7 +1,6 @@
 """NeuralMem — Memory as Infrastructure. Local-first, MCP-native agent memory."""
 from neuralmem.core.config import NeuralMemConfig
 from neuralmem.core.memory import NeuralMem
-from neuralmem.export.mif import MIFExporter
 from neuralmem.core.types import (
     Entity,
     Memory,
@@ -11,6 +10,7 @@ from neuralmem.core.types import (
     SearchResult,
     SessionLayer,
 )
+from neuralmem.export.mif import MIFExporter
 
 __version__ = "0.2.0"
 

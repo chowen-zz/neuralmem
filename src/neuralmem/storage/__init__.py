@@ -6,4 +6,13 @@ try:
 except ImportError:
     PgVectorStorage = None  # type: ignore[assignment,misc]
 
-__all__ = ["SQLiteStorage", "PgVectorStorage"]
+try:
+    from neuralmem.storage.factory import VectorStoreFactory
+except ImportError:
+    VectorStoreFactory = None  # type: ignore[assignment,misc]
+
+__all__ = [
+    "SQLiteStorage",
+    "PgVectorStorage",
+    "VectorStoreFactory",
+]
