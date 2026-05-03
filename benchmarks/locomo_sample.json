@@ -1,0 +1,137 @@
+{
+  "conversations": [
+    {
+      "conversation_id": "conv_001",
+      "messages": [
+        {"role": "user", "content": "I've been thinking about switching my main programming language from Python to Rust for backend work.", "timestamp": "2025-01-15T09:00:00Z"},
+        {"role": "assistant", "content": "That's interesting! What's motivating the switch to Rust?", "timestamp": "2025-01-15T09:01:00Z"},
+        {"role": "user", "content": "Performance mainly. I'm building a real-time trading system and Python's GIL is a bottleneck. Also I love Rust's ownership model.", "timestamp": "2025-01-15T09:02:00Z"},
+        {"role": "assistant", "content": "Rust is excellent for that use case. The ownership system prevents data races at compile time, which is crucial for trading systems.", "timestamp": "2025-01-15T09:03:00Z"},
+        {"role": "user", "content": "Exactly. I'm using tokio for async and sqlx for the database layer. My team lead Sarah approved the migration plan yesterday.", "timestamp": "2025-01-15T09:04:00Z"}
+      ],
+      "questions": [
+        {
+          "question": "What programming language is the user considering switching to for backend work?",
+          "answer": "Rust",
+          "evidence_ids": ["msg_001_0", "msg_001_2"]
+        },
+        {
+          "question": "Why does the user want to switch from Python?",
+          "answer": "Performance issues with Python's GIL for a real-time trading system, and the user likes Rust's ownership model",
+          "evidence_ids": ["msg_001_2"]
+        },
+        {
+          "question": "Who approved the migration plan?",
+          "answer": "Sarah, the team lead",
+          "evidence_ids": ["msg_001_4"]
+        }
+      ]
+    },
+    {
+      "conversation_id": "conv_002",
+      "messages": [
+        {"role": "user", "content": "I went to the new Italian restaurant on Main Street last night. It's called Bella Notte.", "timestamp": "2025-01-16T18:00:00Z"},
+        {"role": "assistant", "content": "How was it? I've heard mixed reviews about that place.", "timestamp": "2025-01-16T18:01:00Z"},
+        {"role": "user", "content": "The pasta was amazing - I had the truffle tagliatelle. But the service was slow, we waited 40 minutes for our entrees.", "timestamp": "2025-01-16T18:02:00Z"},
+        {"role": "assistant", "content": "The truffle tagliatelle sounds delicious. Slow service can be frustrating though.", "timestamp": "2025-01-16T18:03:00Z"},
+        {"role": "user", "content": "Yeah. I'd give it a 7 out of 10. My friend Jake who came with me said he preferred the pizza place across the street.", "timestamp": "2025-01-16T18:04:00Z"}
+      ],
+      "questions": [
+        {
+          "question": "What restaurant did the user visit and what did they order?",
+          "answer": "Bella Notte on Main Street, ordered truffle tagliatelle",
+          "evidence_ids": ["msg_002_0", "msg_002_2"]
+        },
+        {
+          "question": "What rating did the user give the restaurant?",
+          "answer": "7 out of 10",
+          "evidence_ids": ["msg_002_4"]
+        }
+      ]
+    },
+    {
+      "conversation_id": "conv_003",
+      "messages": [
+        {"role": "user", "content": "Can you help me remember my mom's birthday? It's March 15th.", "timestamp": "2025-01-17T10:00:00Z"},
+        {"role": "assistant", "content": "Of course! I've noted that your mom's birthday is March 15th.", "timestamp": "2025-01-17T10:01:00Z"},
+        {"role": "user", "content": "Thanks. She's turning 65 this year. I'm planning a surprise party at our house on Oak Avenue.", "timestamp": "2025-01-17T10:02:00Z"},
+        {"role": "assistant", "content": "A surprise party for her 65th at your house on Oak Avenue sounds wonderful!", "timestamp": "2025-01-17T10:03:00Z"},
+        {"role": "user", "content": "I need to invite about 30 people. Her favorite cake is carrot cake from that bakery on Elm Street - Sweet Delights.", "timestamp": "2025-01-17T10:04:00Z"},
+        {"role": "assistant", "content": "Carrot cake from Sweet Delights on Elm Street - got it. That's a thoughtful choice!", "timestamp": "2025-01-17T10:05:00Z"}
+      ],
+      "questions": [
+        {
+          "question": "When is the user's mom's birthday and how old is she turning?",
+          "answer": "March 15th, turning 65",
+          "evidence_ids": ["msg_003_0", "msg_003_2"]
+        },
+        {
+          "question": "What kind of cake does the user's mom like and from where?",
+          "answer": "Carrot cake from Sweet Delights bakery on Elm Street",
+          "evidence_ids": ["msg_003_4"]
+        },
+        {
+          "question": "Where is the surprise party being held?",
+          "answer": "At the user's house on Oak Avenue",
+          "evidence_ids": ["msg_003_2"]
+        }
+      ]
+    },
+    {
+      "conversation_id": "conv_004",
+      "messages": [
+        {"role": "user", "content": "I had a tough meeting with the product team today. They want to ship the v2.0 release by March 1st.", "timestamp": "2025-01-18T14:00:00Z"},
+        {"role": "assistant", "content": "That sounds like a tight deadline. What's the current status of v2.0?", "timestamp": "2025-01-18T14:01:00Z"},
+        {"role": "user", "content": "We still need to finish the new authentication system and the analytics dashboard. The auth is 80% done but analytics hasn't started.", "timestamp": "2025-01-18T14:02:00Z"},
+        {"role": "assistant", "content": "That does seem ambitious for March 1st. How many engineers are on it?", "timestamp": "2025-01-18T14:03:00Z"},
+        {"role": "user", "content": "Just me and Dev on the backend, plus Mia on frontend. I told the PM we might need to push to March 15th. She wasn't happy but understood.", "timestamp": "2025-01-18T14:04:00Z"}
+      ],
+      "questions": [
+        {
+          "question": "What is the target release date for v2.0?",
+          "answer": "March 1st, but might be pushed to March 15th",
+          "evidence_ids": ["msg_004_0", "msg_004_4"]
+        },
+        {
+          "question": "Who are the engineers working on v2.0?",
+          "answer": "The user and Dev on backend, Mia on frontend",
+          "evidence_ids": ["msg_004_4"]
+        },
+        {
+          "question": "What features still need to be completed for v2.0?",
+          "answer": "The authentication system (80% done) and the analytics dashboard (not started)",
+          "evidence_ids": ["msg_004_2"]
+        }
+      ]
+    },
+    {
+      "conversation_id": "conv_005",
+      "messages": [
+        {"role": "user", "content": "I just adopted a golden retriever puppy! His name is Biscuit.", "timestamp": "2025-01-19T11:00:00Z"},
+        {"role": "assistant", "content": "Congratulations! Golden retrievers are wonderful dogs. How old is Biscuit?", "timestamp": "2025-01-19T11:01:00Z"},
+        {"role": "user", "content": "He's 3 months old. He's already 15 pounds! The vet says he'll probably grow to about 70 pounds.", "timestamp": "2025-01-19T11:02:00Z"},
+        {"role": "assistant", "content": "He's going to be a big boy! Have you started puppy training yet?", "timestamp": "2025-01-19T11:03:00Z"},
+        {"role": "user", "content": "Not yet but I signed up for classes at Happy Paws training center on Cedar Boulevard. They start next Monday at 6pm.", "timestamp": "2025-01-19T11:04:00Z"},
+        {"role": "assistant", "content": "Happy Paws on Cedar Boulevard - that's a great place. Early training is so important for golden retrievers.", "timestamp": "2025-01-19T11:05:00Z"},
+        {"role": "user", "content": "He loves peanut butter and hates baths. Also my landlord said I need to get renter's insurance that covers pets by February 1st.", "timestamp": "2025-01-19T11:06:00Z"}
+      ],
+      "questions": [
+        {
+          "question": "What kind of pet did the user adopt and what is its name?",
+          "answer": "A golden retriever puppy named Biscuit",
+          "evidence_ids": ["msg_005_0"]
+        },
+        {
+          "question": "Where is the puppy training class and when does it start?",
+          "answer": "Happy Paws training center on Cedar Boulevard, starting next Monday at 6pm",
+          "evidence_ids": ["msg_005_4"]
+        },
+        {
+          "question": "What deadline does the user have regarding pet insurance?",
+          "answer": "February 1st - need to get renter's insurance that covers pets",
+          "evidence_ids": ["msg_005_6"]
+        }
+      ]
+    }
+  ]
+}
