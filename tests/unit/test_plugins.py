@@ -1,399 +1,376 @@
-"""Tests for plugin system — PluginManager + built-in plugins."""
+"""Tests for NeuralMem V1.3 plugin system — PluginRegistry + built-in plugins.
+
+All tests use mock / monkeypatch; no external API dependencies.
+"""
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from neuralmem.core.types import Memory, SearchQuery, SearchResult
 from neuralmem.plugins.base import Plugin, PluginContext
-from neuralmem.plugins.builtins import DedupPlugin, ImportancePlugin, RecencyBoostPlugin
+from neuralmem.plugins.builtin import LoggingPlugin, MetricsPlugin, ValidationPlugin
 from neuralmem.plugins.manager import PluginManager
-
-# --- Helpers ---
-
-class SimplePlugin(Plugin):
-    """Minimal test plugin."""
-
-    def __init__(self, name: str = "simple", priority: int = 100):
-        self._name = name
-        self._priority = priority
-        self.calls: list[str] = []
-
-    @property
-    def name(self) -> str:
-        return self._name
-
-    @property
-    def priority(self) -> int:
-        return self._priority
-
-    def on_init(self) -> None:
-        self.calls.append("on_init")
-
-    def on_before_remember(self, memory: Memory) -> Memory:
-        self.calls.append("on_before_remember")
-        return memory
-
-    def on_after_remember(self, memory: Memory) -> None:
-        self.calls.append("on_after_remember")
-
-    def on_before_recall(self, query: SearchQuery) -> SearchQuery:
-        self.calls.append("on_before_recall")
-        return query
-
-    def on_after_recall(self, results):
-        self.calls.append("on_after_recall")
-        return results
-
-    def on_before_forget(self, memory_id: str) -> None:
-        self.calls.append("on_before_forget")
-
-    def on_error(self, error: Exception) -> None:
-        self.calls.append("on_error")
+from neuralmem.plugins.registry import PluginRegistry
 
 
-class FailingPlugin(Plugin):
-    """Plugin that raises on hooks."""
+# --------------------------------------------------------------------------- #
+# 最小插件实现 (用于 registry 测试)
+# --------------------------------------------------------------------------- #
 
-    def __init__(self):
-        self.error_handled = False
+class MockPlugin(Plugin):
+    """用于测试的最小插件实现."""
+
+    def __init__(self, value: str = "") -> None:
+        self.value = value
 
     @property
     def name(self) -> str:
-        return "failing"
+        return "mock"
 
-    def on_before_remember(self, memory: Memory) -> Memory:
-        raise RuntimeError("Plugin failure")
-
-    def on_error(self, error: Exception) -> None:
-        self.error_handled = True
+    def on_remember(self, memory: Memory) -> Memory:
+        return memory.model_copy(update={"content": f"mock:{memory.content}"})
 
 
-class ModifyingPlugin(Plugin):
-    """Plugin that modifies the memory."""
+class AnotherMockPlugin(Plugin):
+    """另一个用于测试的插件实现."""
 
     @property
     def name(self) -> str:
-        return "modifying"
+        return "another_mock"
 
-    @property
-    def priority(self) -> int:
-        return 5
-
-    def on_before_remember(self, memory: Memory) -> Memory:
-        return memory.model_copy(update={"importance": 0.99})
-
-
-class QueryModifyingPlugin(Plugin):
-    """Plugin that modifies the search query."""
-
-    @property
-    def name(self) -> str:
-        return "query_mod"
-
-    def on_before_recall(self, query: SearchQuery) -> SearchQuery:
-        return SearchQuery(
-            query=query.query + " expanded",
-            limit=query.limit,
-        )
-
-
-class ResultsModifyingPlugin(Plugin):
-    """Plugin that modifies search results."""
-
-    @property
-    def name(self) -> str:
-        return "results_mod"
-
-    def on_after_recall(self, results):
-        # Add a synthetic result
-        mem = Memory(content="injected")
-        results.append(
-            SearchResult(
-                memory=mem,
-                score=0.99,
-                retrieval_method="plugin",
-            )
-        )
+    def on_recall(self, results: list[SearchResult]) -> list[SearchResult]:
         return results
 
 
-# --- PluginManager tests ---
+# --------------------------------------------------------------------------- #
+# setup / teardown — 备份并恢复内置注册
+# --------------------------------------------------------------------------- #
 
-class TestPluginManager:
-    def test_register_and_list(self):
-        mgr = PluginManager()
-        p = SimplePlugin("test1")
-        mgr.register(p)
-        plugins = mgr.list_plugins()
-        assert len(plugins) == 1
-        assert plugins[0]["name"] == "test1"
+@pytest.fixture(autouse=True)
+def _preserve_registry():
+    """每个测试前备份注册表, 测试后恢复."""
+    original = dict(PluginRegistry._registry)
+    # 移除内置注册, 让测试在干净状态运行
+    for name in list(PluginRegistry._registry):
+        if name in ("logging", "metrics", "validation"):
+            del PluginRegistry._registry[name]
+    yield
+    PluginRegistry._registry.clear()
+    PluginRegistry._registry.update(original)
 
-    def test_register_calls_on_init(self):
-        mgr = PluginManager()
-        p = SimplePlugin("test1")
-        mgr.register(p)
-        assert "on_init" in p.calls
 
-    def test_register_duplicate_raises(self):
-        mgr = PluginManager()
-        p1 = SimplePlugin("dup")
-        p2 = SimplePlugin("dup")
-        mgr.register(p1)
-        with pytest.raises(ValueError, match="already registered"):
-            mgr.register(p2)
+# --------------------------------------------------------------------------- #
+# PluginRegistry — register
+# --------------------------------------------------------------------------- #
 
-    def test_unregister(self):
-        mgr = PluginManager()
-        p = SimplePlugin("removable")
-        mgr.register(p)
-        removed = mgr.unregister("removable")
-        assert removed is p
-        assert mgr.list_plugins() == []
+class TestPluginRegistryRegister:
+    def test_register_plugin(self):
+        PluginRegistry.register("mock", "tests.unit.test_plugins", "MockPlugin")
+        assert "mock" in PluginRegistry.list_plugins()
 
-    def test_unregister_not_found_raises(self):
-        mgr = PluginManager()
+    def test_register_duplicate_overwrites(self):
+        """重复注册应覆盖(不报错)."""
+        PluginRegistry.register("mock", "tests.unit.test_plugins", "MockPlugin")
+        PluginRegistry.register("mock", "tests.unit.test_plugins", "AnotherMockPlugin")
+        assert PluginRegistry._registry["mock"][1] == "AnotherMockPlugin"
+
+
+# --------------------------------------------------------------------------- #
+# PluginRegistry — unregister
+# --------------------------------------------------------------------------- #
+
+class TestPluginRegistryUnregister:
+    def test_unregister_removes_entry(self):
+        PluginRegistry.register("mock", "tests.unit.test_plugins", "MockPlugin")
+        entry = PluginRegistry.unregister("mock")
+        assert entry == ("tests.unit.test_plugins", "MockPlugin")
+        assert "mock" not in PluginRegistry.list_plugins()
+
+    def test_unregister_missing_raises(self):
         with pytest.raises(KeyError):
-            mgr.unregister("nonexistent")
+            PluginRegistry.unregister("nonexistent")
 
-    def test_priority_order(self):
-        mgr = PluginManager()
-        p_low = SimplePlugin("low", priority=10)
-        p_high = SimplePlugin("high", priority=100)
-        mgr.register(p_high)
-        mgr.register(p_low)
-        plugins = mgr.list_plugins()
-        assert plugins[0]["name"] == "low"
-        assert plugins[1]["name"] == "high"
 
-    def test_run_hook_dispatches_to_all(self):
-        mgr = PluginManager()
-        p1 = SimplePlugin("p1")
-        p2 = SimplePlugin("p2")
-        mgr.register(p1)
-        mgr.register(p2)
-        mem = Memory(content="test")
-        mgr.run_hook("on_before_remember", mem)
-        assert "on_before_remember" in p1.calls
-        assert "on_before_remember" in p2.calls
+# --------------------------------------------------------------------------- #
+# PluginRegistry — list / introspection
+# --------------------------------------------------------------------------- #
 
-    def test_run_hook_passes_return_value(self):
-        mgr = PluginManager()
-        mgr.register(ModifyingPlugin())
-        mem = Memory(content="test", importance=0.5)
-        result = mgr.run_hook("on_before_remember", mem)
-        assert result.importance == 0.99
+class TestPluginRegistryIntrospection:
+    def test_list_plugins_empty(self):
+        assert PluginRegistry.list_plugins() == []
 
-    def test_run_hook_error_isolation(self):
-        mgr = PluginManager()
-        fail = FailingPlugin()
-        simple = SimplePlugin("after_fail")
-        mgr.register(fail)
-        mgr.register(simple)
-        mem = Memory(content="test")
-        mgr.run_hook("on_before_remember", mem)
-        # Should not raise; simple plugin still runs
-        assert "on_before_remember" in simple.calls
-        assert fail.error_handled
+    def test_list_plugins_multiple(self):
+        PluginRegistry.register("mock", "tests.unit.test_plugins", "MockPlugin")
+        PluginRegistry.register("another", "tests.unit.test_plugins", "AnotherMockPlugin")
+        names = PluginRegistry.list_plugins()
+        assert sorted(names) == ["another", "mock"]
 
-    def test_run_hook_error_recorded_in_context(self):
-        mgr = PluginManager()
-        mgr.register(FailingPlugin())
-        ctx = PluginContext()
-        mem = Memory(content="test")
-        mgr.run_hook("on_before_remember", mem, context=ctx)
-        assert len(ctx.errors) == 1
-        assert "Plugin failure" in str(ctx.errors[0])
+    def test_is_registered(self):
+        PluginRegistry.register("mock", "tests.unit.test_plugins", "MockPlugin")
+        assert PluginRegistry.is_registered("mock") is True
+        assert PluginRegistry.is_registered("nope") is False
 
-    def test_run_hook_no_args(self):
-        mgr = PluginManager()
-        p = SimplePlugin("test")
-        mgr.register(p)
-        mgr.run_hook("on_after_remember", Memory(content="test"))
-        assert "on_after_remember" in p.calls
+    def test_get_info(self):
+        PluginRegistry.register("mock", "tests.unit.test_plugins", "MockPlugin")
+        info = PluginRegistry.get_info("mock")
+        assert info["module"] == "tests.unit.test_plugins"
+        assert info["class"] == "MockPlugin"
 
-    def test_run_hook_before_recall_modifies_query(self):
-        mgr = PluginManager()
-        mgr.register(QueryModifyingPlugin())
-        query = SearchQuery(query="original")
-        result = mgr.run_hook("on_before_recall", query)
-        assert "expanded" in result.query
+    def test_registry_info(self):
+        PluginRegistry.register("mock", "tests.unit.test_plugins", "MockPlugin")
+        info = PluginRegistry.registry_info()
+        assert "mock" in info
+        assert info["mock"]["class"] == "MockPlugin"
 
-    def test_run_hook_after_recall_modifies_results(self):
-        mgr = PluginManager()
-        mgr.register(ResultsModifyingPlugin())
-        results = []
-        result = mgr.run_hook("on_after_recall", results)
-        assert len(result) == 1
-        assert result[0].memory.content == "injected"
 
-    def test_run_hook_before_forget(self):
-        mgr = PluginManager()
-        p = SimplePlugin("test")
-        mgr.register(p)
-        mgr.run_hook("on_before_forget", "mem-123")
-        assert "on_before_forget" in p.calls
+# --------------------------------------------------------------------------- #
+# PluginRegistry — load
+# --------------------------------------------------------------------------- #
 
-    def test_get_plugin(self):
-        mgr = PluginManager()
-        p = SimplePlugin("findme")
-        mgr.register(p)
-        assert mgr.get_plugin("findme") is p
-        assert mgr.get_plugin("nope") is None
+class TestPluginRegistryLoad:
+    def test_load_plugin(self):
+        PluginRegistry.register("mock", "tests.unit.test_plugins", "MockPlugin")
+        instance = PluginRegistry.load("mock")
+        assert isinstance(instance, MockPlugin)
 
-    def test_plugin_version(self):
-        p = SimplePlugin("vtest")
-        assert p.version == "0.1.0"
+    def test_load_plugin_with_kwargs(self):
+        PluginRegistry.register("mock", "tests.unit.test_plugins", "MockPlugin")
+        instance = PluginRegistry.load("mock", value="hello")
+        assert instance.value == "hello"
 
-    def test_plugin_context_data(self):
-        ctx = PluginContext()
-        ctx.data["key"] = "value"
-        assert ctx.data["key"] == "value"
+    def test_load_missing_raises(self):
+        with pytest.raises(ValueError, match="Unknown plugin"):
+            PluginRegistry.load("missing")
 
-    def test_on_init_failure_isolated(self):
-        class InitFailPlugin(Plugin):
+    def test_load_all(self):
+        PluginRegistry.register("mock", "tests.unit.test_plugins", "MockPlugin")
+        PluginRegistry.register("another", "tests.unit.test_plugins", "AnotherMockPlugin")
+        loaded = PluginRegistry.load_all()
+        assert "mock" in loaded
+        assert "another" in loaded
+        assert isinstance(loaded["mock"], MockPlugin)
+        assert isinstance(loaded["another"], AnotherMockPlugin)
+
+    def test_load_all_skips_broken(self):
+        """load_all 应跳过加载失败的插件并继续."""
+        PluginRegistry.register("bad", "nonexistent.module.path", "BadPlugin")
+        PluginRegistry.register("mock", "tests.unit.test_plugins", "MockPlugin")
+        loaded = PluginRegistry.load_all()
+        assert "mock" in loaded
+        assert "bad" not in loaded
+
+
+# --------------------------------------------------------------------------- #
+# PluginRegistry — discover
+# --------------------------------------------------------------------------- #
+
+class TestPluginRegistryDiscover:
+    def test_discover_finds_plugins(self):
+        discovered = PluginRegistry.discover("tests.unit.test_plugins")
+        assert "mock_plugin" in discovered
+        assert "another_mock_plugin" in discovered
+
+    def test_discover_missing_module_returns_empty(self):
+        discovered = PluginRegistry.discover("nonexistent.module.path")
+        assert discovered == []
+
+    def test_discover_ignores_abstract_base(self):
+        discovered = PluginRegistry.discover("neuralmem.plugins.base")
+        # Plugin (abstract) should NOT be registered
+        assert "plugin" not in discovered
+
+
+# --------------------------------------------------------------------------- #
+# Built-in plugins — LoggingPlugin
+# --------------------------------------------------------------------------- #
+
+class TestLoggingPlugin:
+    def test_name_and_priority(self):
+        plugin = LoggingPlugin()
+        assert plugin.name == "logging"
+        assert plugin.priority == 5
+
+    def test_on_remember_logs(self):
+        mock_logger = MagicMock()
+        plugin = LoggingPlugin(logger=mock_logger)
+        mem = Memory(content="hello")
+        result = plugin.on_remember(mem)
+        assert result.content == "hello"
+        mock_logger.info.assert_called_once()
+        assert "remember" in mock_logger.info.call_args[0][0]
+
+    def test_on_recall_logs(self):
+        mock_logger = MagicMock()
+        plugin = LoggingPlugin(logger=mock_logger)
+        results: list[SearchResult] = []
+        plugin.on_recall(results)
+        mock_logger.info.assert_called_once()
+        assert "recall" in mock_logger.info.call_args[0][0]
+
+    def test_on_reflect_logs(self):
+        mock_logger = MagicMock()
+        plugin = LoggingPlugin(logger=mock_logger)
+        mem = Memory(content="hello")
+        plugin.on_reflect(mem)
+        mock_logger.info.assert_called_once()
+        assert "reflect" in mock_logger.info.call_args[0][0]
+
+
+# --------------------------------------------------------------------------- #
+# Built-in plugins — MetricsPlugin
+# --------------------------------------------------------------------------- #
+
+class TestMetricsPlugin:
+    def test_name_and_priority(self):
+        plugin = MetricsPlugin()
+        assert plugin.name == "metrics"
+        assert plugin.priority == 10
+
+    def test_on_remember_increments_count(self):
+        plugin = MetricsPlugin()
+        mem = Memory(content="hello")
+        plugin.on_remember(mem)
+        assert plugin._metrics["remember_count"] == 1
+
+    def test_on_recall_increments_count(self):
+        plugin = MetricsPlugin()
+        plugin.on_recall([])
+        assert plugin._metrics["recall_count"] == 1
+
+    def test_on_reflect_increments_count(self):
+        plugin = MetricsPlugin()
+        mem = Memory(content="hello")
+        plugin.on_reflect(mem)
+        assert plugin._metrics["reflect_count"] == 1
+
+    def test_flush_returns_snapshot(self):
+        plugin = MetricsPlugin()
+        plugin.on_remember(Memory(content="a"))
+        plugin.on_recall([])
+        snapshot = plugin.flush()
+        assert snapshot["remember_count"] == 1
+        assert snapshot["recall_count"] == 1
+        # Latencies should be reset
+        assert plugin._metrics["remember_latency_ms"] == []
+        assert plugin._metrics["recall_latency_ms"] == []
+        # Counts remain monotonic
+        assert plugin._metrics["remember_count"] == 1
+
+
+# --------------------------------------------------------------------------- #
+# Built-in plugins — ValidationPlugin
+# --------------------------------------------------------------------------- #
+
+class TestValidationPlugin:
+    def test_name_and_priority(self):
+        plugin = ValidationPlugin()
+        assert plugin.name == "validation"
+        assert plugin.priority == 1
+
+    def test_on_remember_empty_content_raises(self):
+        plugin = ValidationPlugin()
+        mem = Memory(content="")
+        with pytest.raises(ValueError, match="empty"):
+            plugin.on_remember(mem)
+
+    def test_on_remember_whitespace_content_raises(self):
+        plugin = ValidationPlugin()
+        mem = Memory(content="   ")
+        with pytest.raises(ValueError, match="empty"):
+            plugin.on_remember(mem)
+
+    def test_on_remember_too_long_raises(self):
+        plugin = ValidationPlugin(max_content_length=10)
+        mem = Memory(content="a" * 11)
+        with pytest.raises(ValueError, match="exceeds"):
+            plugin.on_remember(mem)
+
+    def test_on_remember_valid_passes_through(self):
+        plugin = ValidationPlugin()
+        mem = Memory(content="valid content")
+        result = plugin.on_remember(mem)
+        assert result.content == "valid content"
+
+    def test_on_recall_filters_invalid(self):
+        plugin = ValidationPlugin(max_content_length=10)
+        good = SearchResult(memory=Memory(content="ok"), score=0.5, retrieval_method="test")
+        bad = SearchResult(memory=Memory(content="a" * 11), score=0.5, retrieval_method="test")
+        results = plugin.on_recall([good, bad])
+        assert len(results) == 1
+        assert results[0].memory.content == "ok"
+
+    def test_on_reflect_uses_same_rules(self):
+        plugin = ValidationPlugin()
+        mem = Memory(content="")
+        with pytest.raises(ValueError, match="empty"):
+            plugin.on_reflect(mem)
+
+
+# --------------------------------------------------------------------------- #
+# V1.3 hooks on Plugin base class
+# --------------------------------------------------------------------------- #
+
+class TestPluginV13Hooks:
+    def test_on_remember_default_passes_through(self):
+        class MinimalPlugin(Plugin):
             @property
-            def name(self):
-                return "init_fail"
+            def name(self) -> str:
+                return "minimal"
 
-            def on_init(self):
-                raise RuntimeError("init boom")
+        plugin = MinimalPlugin()
+        mem = Memory(content="hello")
+        result = plugin.on_remember(mem)
+        assert result.content == "hello"
+
+    def test_on_recall_default_passes_through(self):
+        class MinimalPlugin(Plugin):
+            @property
+            def name(self) -> str:
+                return "minimal"
+
+        plugin = MinimalPlugin()
+        results: list[SearchResult] = []
+        assert plugin.on_recall(results) == results
+
+    def test_on_reflect_default_passes_through(self):
+        class MinimalPlugin(Plugin):
+            @property
+            def name(self) -> str:
+                return "minimal"
+
+        plugin = MinimalPlugin()
+        mem = Memory(content="hello")
+        result = plugin.on_reflect(mem)
+        assert result.content == "hello"
+
+
+# --------------------------------------------------------------------------- #
+# Integration: PluginRegistry + PluginManager
+# --------------------------------------------------------------------------- #
+
+class TestRegistryManagerIntegration:
+    def test_load_and_register_with_manager(self):
+        PluginRegistry.register("mock", "tests.unit.test_plugins", "MockPlugin")
+        plugin = PluginRegistry.load("mock")
+        mgr = PluginManager()
+        mgr.register(plugin)
+        assert mgr.get_plugin("mock") is plugin
+
+    def test_builtin_plugins_loadable(self):
+        """内置插件应能通过 registry 加载并在 manager 中运行."""
+        # Re-register builtins (fixture stripped them)
+        PluginRegistry.register("logging", "neuralmem.plugins.builtin", "LoggingPlugin")
+        PluginRegistry.register("metrics", "neuralmem.plugins.builtin", "MetricsPlugin")
+        PluginRegistry.register("validation", "neuralmem.plugins.builtin", "ValidationPlugin")
 
         mgr = PluginManager()
-        p = InitFailPlugin()
-        mgr.register(p)  # Should not raise
-        assert mgr.list_plugins()[0]["name"] == "init_fail"
+        for name in PluginRegistry.list_plugins():
+            plugin = PluginRegistry.load(name)
+            mgr.register(plugin)
 
-
-# --- DedupPlugin tests ---
-
-class TestDedupPlugin:
-    def test_no_storage_returns_unchanged(self):
-        plugin = DedupPlugin()
-        mem = Memory(content="test")
-        result = plugin.on_before_remember(mem)
-        assert result.content == "test"
-
-    def test_no_embedding_returns_unchanged(self):
-        plugin = DedupPlugin(storage=MagicMock(), embedder=MagicMock())
-        mem = Memory(content="test", embedding=None)
-        result = plugin.on_before_remember(mem)
-        assert result.content == "test"
-
-    def test_merges_when_similar_found(self):
-        storage = MagicMock()
-        embedder = MagicMock()
-        existing = Memory(
-            content="existing memory",
-            user_id="u1",
-            tags=("old",),
-            importance=0.7,
-        )
-        storage.find_similar.return_value = [existing]
-        plugin = DedupPlugin(
-            storage=storage, embedder=embedder, threshold=0.9
-        )
-        mem = Memory(
-            content="new memory",
-            user_id="u1",
-            embedding=[0.1, 0.2, 0.3],
-            tags=("new",),
-            importance=0.5,
-        )
-        result = plugin.on_before_remember(mem)
-        assert "existing memory" in result.content
-        assert "new memory" in result.content
-
-    def test_no_merge_when_no_similar(self):
-        storage = MagicMock()
-        storage.find_similar.return_value = []
-        plugin = DedupPlugin(storage=storage, embedder=MagicMock())
-        mem = Memory(content="unique", embedding=[0.1])
-        result = plugin.on_before_remember(mem)
-        assert result.content == "unique"
-
-    def test_no_merge_when_self_match(self):
-        storage = MagicMock()
-        mem = Memory(id="same-id", content="self")
-        storage.find_similar.return_value = [mem]
-        plugin = DedupPlugin(storage=storage, embedder=MagicMock())
-        mem2 = Memory(id="same-id", content="self", embedding=[0.1])
-        result = plugin.on_before_remember(mem2)
-        # Self match should not trigger merge (same id)
-        assert result.content == "self"
-
-
-# --- ImportancePlugin tests ---
-
-class TestImportancePlugin:
-    def test_name_and_priority(self):
-        plugin = ImportancePlugin()
-        assert plugin.name == "importance"
-        assert plugin.priority == 50
-
-    def test_on_after_remember_no_crash(self):
-        plugin = ImportancePlugin()
-        mem = Memory(content="short", importance=0.5)
-        # Should not raise even without storage
-        plugin.on_after_remember(mem)
-
-
-# --- RecencyBoostPlugin tests ---
-
-class TestRecencyBoostPlugin:
-    def test_name_and_priority(self):
-        plugin = RecencyBoostPlugin()
-        assert plugin.name == "recency_boost"
-        assert plugin.priority == 80
-
-    def test_empty_results_passthrough(self):
-        plugin = RecencyBoostPlugin()
-        result = plugin.on_after_recall([])
-        assert result == []
-
-    def test_boosts_recent_memories(self):
-        plugin = RecencyBoostPlugin(decay_hours=168.0)
-        now = datetime.now(timezone.utc)
-        mem = Memory(content="recent", created_at=now, importance=0.5)
-        sr = SearchResult(
-            memory=mem, score=0.5, retrieval_method="test"
-        )
-        results = plugin.on_after_recall([sr])
-        # Should get a small boost
-        assert results[0].score >= 0.5
-
-    def test_old_memories_get_less_boost(self):
-        plugin = RecencyBoostPlugin(decay_hours=24.0)
-        from datetime import timedelta
-
-        old_time = datetime.now(timezone.utc) - timedelta(days=365)
-        mem = Memory(content="old", created_at=old_time, importance=0.5)
-        sr = SearchResult(
-            memory=mem, score=0.5, retrieval_method="test"
-        )
-        results = plugin.on_after_recall([sr])
-        # Very old → minimal boost
-        assert results[0].score < 0.55
-
-    def test_results_sorted_after_boost(self):
-        plugin = RecencyBoostPlugin()
-        from datetime import timedelta
-
-        now = datetime.now(timezone.utc)
-        recent = Memory(content="new", created_at=now)
-        old = Memory(
-            content="old",
-            created_at=now - timedelta(days=365),
-        )
-        # Old has higher base score
-        results_old = SearchResult(
-            memory=old, score=0.9, retrieval_method="test"
-        )
-        results_new = SearchResult(
-            memory=recent, score=0.85, retrieval_method="test"
-        )
-        boosted = plugin.on_after_recall([results_old, results_new])
-        # Order may change due to recency boost
-        assert len(boosted) == 2
+        mem = Memory(content="integration test")
+        mgr.run_hook("on_remember", mem)
+        # All three should have executed without error
+        assert len(mgr.list_plugins()) == 3

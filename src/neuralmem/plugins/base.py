@@ -80,3 +80,26 @@ class Plugin(ABC):
 
     def on_error(self, error: Exception) -> None:
         """Called when any error occurs in the plugin pipeline."""
+
+    # --- V1.3 simplified hooks ---
+
+    def on_remember(self, memory: Memory) -> Memory:
+        """V1.3 hook: called when a memory is remembered.
+
+        Return the (possibly modified) memory.
+        """
+        return memory
+
+    def on_recall(self, results: list[SearchResult]) -> list[SearchResult]:
+        """V1.3 hook: called when memories are recalled.
+
+        Return the (possibly modified) results.
+        """
+        return results
+
+    def on_reflect(self, memory: Memory) -> Memory:
+        """V1.3 hook: called during reflection / consolidation.
+
+        Return the (possibly modified) memory.
+        """
+        return memory
