@@ -148,6 +148,8 @@ _BUILTIN_CONNECTORS: list[tuple[str, str, str, str]] = [
     ("slack", "neuralmem.connectors.slack", "SlackConnector", "slack"),
     ("github", "neuralmem.connectors.github", "GitHubConnector", "github"),
     ("filesystem", "neuralmem.connectors.filesystem", "FilesystemConnector", "filesystem"),
+    ("gdrive", "neuralmem.connectors.gdrive", "GoogleDriveConnector", "gdrive"),
+    ("s3", "neuralmem.connectors.s3", "S3Connector", "s3"),
 ]
 
 for _name, _mod, _cls, _extra in _BUILTIN_CONNECTORS:

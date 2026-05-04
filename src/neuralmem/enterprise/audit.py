@@ -20,6 +20,7 @@ class ComplianceStandard(str, Enum):
     SOC2 = "soc2"
     HIPAA = "hipaa"
     CCPA = "ccpa"
+    ISO27001 = "iso27001"
 
 
 class AuditEventType(str, Enum):

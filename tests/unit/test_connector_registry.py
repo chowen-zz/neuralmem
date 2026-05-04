@@ -49,8 +49,9 @@ def _preserve_registry():
     """每个测试前备份注册表, 测试后恢复."""
     original = dict(ConnectorRegistry._registry)
     # 移除内置注册, 让测试在干净状态运行
+    builtin = {"notion", "slack", "github", "filesystem", "gdrive", "s3"}
     for name in list(ConnectorRegistry._registry):
-        if name in ("notion", "slack", "github", "filesystem"):
+        if name in builtin:
             del ConnectorRegistry._registry[name]
     yield
     ConnectorRegistry._registry.clear()
