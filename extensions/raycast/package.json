@@ -1,0 +1,80 @@
+{
+  "$schema": "https://www.raycast.com/schemas/extension.json",
+  "name": "neuralmem",
+  "title": "NeuralMem",
+  "description": "Quick save, search, and recall your NeuralMem memories directly from Raycast.",
+  "icon": "icon.png",
+  "author": "Nous Research",
+  "categories": [
+    "Productivity",
+    "Developer Tools",
+    "Other"
+  ],
+  "license": "MIT",
+  "commands": [
+    {
+      "name": "search",
+      "title": "Search Memories",
+      "subtitle": "NeuralMem",
+      "description": "Search your NeuralMem knowledge base with semantic or keyword queries.",
+      "mode": "view"
+    },
+    {
+      "name": "save",
+      "title": "Save to Memory",
+      "subtitle": "NeuralMem",
+      "description": "Quickly save selected text, clipboard content, or typed notes to NeuralMem.",
+      "mode": "view"
+    },
+    {
+      "name": "recent",
+      "title": "Recent Memories",
+      "subtitle": "NeuralMem",
+      "description": "Browse and open your most recently saved memories.",
+      "mode": "view"
+    }
+  ],
+  "preferences": [
+    {
+      "name": "apiBaseUrl",
+      "type": "textfield",
+      "required": true,
+      "title": "NeuralMem API Base URL",
+      "description": "Base URL of your NeuralMem API server (e.g. http://localhost:8000/api/v1).",
+      "default": "http://localhost:8000/api/v1",
+      "placeholder": "http://localhost:8000/api/v1"
+    },
+    {
+      "name": "apiKey",
+      "type": "password",
+      "required": false,
+      "title": "API Key",
+      "description": "Optional API key for authenticated NeuralMem instances.",
+      "placeholder": "nm_..."
+    },
+    {
+      "name": "defaultSpace",
+      "type": "textfield",
+      "required": false,
+      "title": "Default Space",
+      "description": "Default memory space / namespace to save into.",
+      "default": "default",
+      "placeholder": "default"
+    }
+  ],
+  "dependencies": {
+    "@raycast/api": "^1.64.0",
+    "@raycast/utils": "^1.10.0"
+  },
+  "devDependencies": {
+    "@types/node": "20.10.0",
+    "@types/react": "18.2.0",
+    "typescript": "^5.3.0"
+  },
+  "scripts": {
+    "build": "ray build -e dist",
+    "dev": "ray develop",
+    "lint": "ray lint",
+    "publish": "npx @raycast/api@latest publish"
+  }
+}
