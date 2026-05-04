@@ -239,6 +239,7 @@ class TestMemberPermissions:
     def test_update_role_updates_timestamp(self):
         member = OrganizationMember(user_id="u1", org_id="org_1", role=MemberRole.VIEWER)
         before = member.updated_at
+        import time; time.sleep(0.001)
         member.update_role(MemberRole.EDITOR)
         assert member.updated_at > before
 
