@@ -1,0 +1,150 @@
+# =============================================================================
+# NeuralMem V1.6 — Docker Compose Full Stack
+# =============================================================================
+# Services:
+#   neuralmem-app      — MCP server + core memory engine
+#   neuralmem-dashboard — FastAPI dashboard with REST API
+#   pinecone           — Optional: Pinecone vector DB (external cloud, config only)
+#   weaviate           — Optional: Local Weaviate vector DB container
+#   chromadb           — Optional: Local ChromaDB vector DB container
+# =============================================================================
+
+services:
+  # ---------------------------------------------------------------------------
+  # Core NeuralMem Application (MCP Server)
+  # ---------------------------------------------------------------------------
+  neuralmem-app:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      target: runtime
+    container_name: neuralmem-app
+    image: neuralmem:v1.6.0
+    ports:
+      - "${NEURALMEM_APP_PORT:-8080}:8080"
+    volumes:
+      - neuralmem-data:/data
+      - neuralmem-logs:/app/logs
+    environment:
+      - NEURALMEM_DB_PATH=/data/memory.db
+      - NEURALMEM_EMBEDDING_MODEL=${NEURALMEM_EMBEDDING_MODEL:-all-MiniLM-L6-v2}
+      - NEURALMEM_EMBEDDING_PROVIDER=${NEURALMEM_EMBEDDING_PROVIDER:-local}
+      - NEURALMEM_CONFLICT_LOW=${NEURALMEM_CONFLICT_LOW:-0.75}
+      - NEURALMEM_CONFLICT_HIGH=${NEURALMEM_CONFLICT_HIGH:-0.95}
+      - NEURALMEM_REINFORCE=${NEURALMEM_REINFORCE:-true}
+      - NEURALMEM_REINFORCE_BOOST=${NEURALMEM_REINFORCE_BOOST:-0.05}
+      - NEURALMEM_LLM_EXTRACTION=${NEURALMEM_LLM_EXTRACTION:-false}
+      - NEURALMEM_LLM_EXTRACTOR=${NEURALMEM_LLM_EXTRACTOR:-none}
+      - NEURALMEM_ENABLE_METRICS=${NEURALMEM_ENABLE_METRICS:-true}
+      - NEURALMEM_LOG_LEVEL=${NEURALMEM_LOG_LEVEL:-INFO}
+      - PORT=8080
+      - MODE=mcp
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    networks:
+      - neuralmem-net
+
+  # ---------------------------------------------------------------------------
+  # NeuralMem Dashboard (FastAPI Web UI)
+  # ---------------------------------------------------------------------------
+  neuralmem-dashboard:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+      target: runtime
+    container_name: neuralmem-dashboard
+    image: neuralmem:v1.6.0
+    ports:
+      - "${NEURALMEM_DASHBOARD_PORT:-8081}:8081"
+    volumes:
+      - neuralmem-data:/data
+      - neuralmem-logs:/app/logs
+    environment:
+      - NEURALMEM_DB_PATH=/data/memory.db
+      - NEURALMEM_EMBEDDING_MODEL=${NEURALMEM_EMBEDDING_MODEL:-all-MiniLM-L6-v2}
+      - NEURALMEM_EMBEDDING_PROVIDER=${NEURALMEM_EMBEDDING_PROVIDER:-local}
+      - NEURALMEM_ENABLE_METRICS=${NEURALMEM_ENABLE_METRICS:-true}
+      - NEURALMEM_LOG_LEVEL=${NEURALMEM_LOG_LEVEL:-INFO}
+      - DASHBOARD_PORT=8081
+      - MODE=dashboard
+    restart: unless-stopped
+    depends_on:
+      neuralmem-app:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8081/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    networks:
+      - neuralmem-net
+
+  # ---------------------------------------------------------------------------
+  # Optional: Weaviate Vector Database (local)
+  # ---------------------------------------------------------------------------
+  weaviate:
+    image: semitechnologies/weaviate:1.24.0
+    container_name: neuralmem-weaviate
+    profiles: ["vector-db", "weaviate", "full"]
+    ports:
+      - "${WEAVIATE_PORT:-8082}:8080"
+    volumes:
+      - weaviate-data:/var/lib/weaviate
+    environment:
+      QUERY_DEFAULTS_LIMIT: 25
+      AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED: "true"
+      PERSISTENCE_DATA_PATH: /var/lib/weaviate
+      DEFAULT_VECTORIZER_MODULE: none
+      ENABLE_MODULES: ""
+      CLUSTER_HOSTNAME: neuralmem-weaviate
+    restart: unless-stopped
+    networks:
+      - neuralmem-net
+
+  # ---------------------------------------------------------------------------
+  # Optional: ChromaDB Vector Database (local)
+  # ---------------------------------------------------------------------------
+  chromadb:
+    image: chromadb/chroma:0.5.0
+    container_name: neuralmem-chromadb
+    profiles: ["vector-db", "chroma", "full"]
+    ports:
+      - "${CHROMADB_PORT:-8083}:8000"
+    volumes:
+      - chromadb-data:/chroma/chroma
+    environment:
+      - IS_PERSISTENT=TRUE
+      - PERSIST_DIRECTORY=/chroma/chroma
+      - ANONYMIZED_TELEMETRY=false
+    restart: unless-stopped
+    networks:
+      - neuralmem-net
+
+# =============================================================================
+# Persistent Volumes
+# =============================================================================
+volumes:
+  neuralmem-data:
+    driver: local
+  neuralmem-logs:
+    driver: local
+  weaviate-data:
+    driver: local
+  chromadb-data:
+    driver: local
+
+# =============================================================================
+# Networks
+# =============================================================================
+networks:
+  neuralmem-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
